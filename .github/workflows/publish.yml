@@ -153,12 +153,11 @@ jobs:
           dotnet tool update --global vpk --version 0.0.1298
           echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
 
-      - name: Install Velopack CLI (Windows)
+      - name: Install NSIS (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          dotnet tool update --global vpk --version 0.0.1298
-          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          choco install nsis -y --no-progress
 
       - name: Publish (Linux)
         if: runner.os == 'Linux'
@@ -285,23 +284,20 @@ jobs:
             --icon "$icon_path" \
             --outputDir "$PACK_DIR"
 
-      - name: Package with Velopack (Windows)
+      - name: Package with NSIS (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $iconPath = (Resolve-Path '${{ matrix.icon }}').Path
-          $packageChannel = "${{ matrix.rid }}-$env:CHANNEL"
           Get-ChildItem -Path $env:PUBLISH_DIR_INSTALLER -Filter '*.pdb' -Recurse | Remove-Item -Force
-          vpk pack `
-            --packId "$env:APP_NAME" `
-            --packVersion $env:VERSION `
-            --channel $packageChannel `
-            --runtime ${{ matrix.rid }} `
-            --packDir $env:PUBLISH_DIR_INSTALLER `
-            --mainExe '${{ matrix.mainExe }}' `
-            --packTitle "$env:APP_NAME" `
-            --icon $iconPath `
-            --outputDir $env:PACK_DIR
+          & "$env:GITHUB_WORKSPACE\scripts\build-nsis-installer.ps1" `
+            -AppName "$env:APP_NAME" `
+            -AppId "$env:APP_NAME" `
+            -Version "$env:VERSION" `
+            -MainExe '${{ matrix.mainExe }}' `
+            -PublishDir "$env:PUBLISH_DIR_INSTALLER" `
+            -OutputDir "$env:PACK_DIR" `
+            -OutputFileName "$env:APP_NAME-$env:VERSION-${{ matrix.rid }}-Setup.exe" `
+            -AppDataDirName "Carton"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v6

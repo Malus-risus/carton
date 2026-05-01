@@ -20,6 +20,7 @@ $publishDirPortable = "$repoRoot\artifacts\publish\$rid-portable"
 $publishDirInstaller = "$repoRoot\artifacts\publish\$rid-installer"
 $packDir = "$repoRoot\artifacts\pack\$Channel"
 $includeKernelScript = "$repoRoot\scripts\include-singbox-kernel.ps1"
+$nsisBuilderScript = "$repoRoot\scripts\build-nsis-installer.ps1"
 $kernelStageDir = Join-Path $env:TEMP ("carton-singbox-runtime-" + [Guid]::NewGuid().ToString("N"))
 
 Write-Host "==== Environment ===="
@@ -33,17 +34,6 @@ Write-Host "====================="
 Set-Location $repoRoot
 
 $env:DOTNET_ROLL_FORWARD = "Major"
-
-# Check for Velopack CLI
-if (!(Get-Command vpk -ErrorAction SilentlyContinue)) {
-    Write-Host "Velopack CLI (vpk) not found in current PATH. Trying to install/update..."
-    dotnet tool update --global vpk --version 0.0.1298
-    if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne $null) {
-        Write-Warning "Failed to install Velopack CLI automatically."
-    }
-    # Add to path for this session just in case
-    $env:PATH += ";$env:USERPROFILE\.dotnet\tools"
-}
 
 Write-Host "Cleaning up old artifacts..."
 if (Test-Path $publishDirPortable) { Remove-Item -Recurse -Force $publishDirPortable }
@@ -127,49 +117,24 @@ if (Test-Path "$publishDirInstaller\*.pdb") {
     Get-ChildItem -Path $publishDirInstaller -Filter '*.pdb' -Recurse | Remove-Item -Force
 }
 
-Write-Host "`n==== 4. Creating Velopack Installer ===="
-$iconPath = (Resolve-Path "src\carton.GUI\Assets\carton_icon.ico").Path
-$mainExe = "$appName.exe"
-
-vpk pack `
-    --packId $appName `
-    --packVersion $Version `
-    --channel $Channel `
-    --runtime $rid `
-    --packDir $publishDirInstaller `
-    --mainExe $mainExe `
-    --packTitle $appName `
-    --icon $iconPath `
-    --outputDir $packDir
-
-if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne $null) {
-    Write-Error "Velopack packaging failed."
-    exit 1
-}
+Write-Host "`n==== 4. Creating NSIS Installer ===="
+$renamedSetupName = "$appName-$Version-$rid-Setup.exe"
+& $nsisBuilderScript `
+    -AppName $appName `
+    -AppId "carton" `
+    -Version $Version `
+    -MainExe "$appName.exe" `
+    -PublishDir $publishDirInstaller `
+    -OutputDir $packDir `
+    -OutputFileName $renamedSetupName `
+    -AppDataDirName "Carton"
 
 Set-Content -Path "$packDir\channel.txt" -Value $Channel
-
-$generatedSetupFile = Get-ChildItem -Path $packDir -Filter "*-Setup.exe" -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-$renamedSetupName = "$appName-$Version-$rid-Setup.exe"
-$renamedSetupPath = "$packDir\$renamedSetupName"
-
-if (-not $generatedSetupFile) {
-    Write-Error "Installer setup executable was not generated in: $packDir"
-    exit 1
-}
-
-if (-not [string]::Equals($generatedSetupFile.Name, $renamedSetupName, [System.StringComparison]::OrdinalIgnoreCase)) {
-    # Delete if target already exists to prevent Rename-Item from failing
-    if (Test-Path $renamedSetupPath) {
-        Remove-Item -Path $renamedSetupPath -Force
-    }
-    Rename-Item -Path $generatedSetupFile.FullName -NewName $renamedSetupName -Force
-}
 
 Write-Host "`n==== Build Completed Successfully ===="
 Write-Host "Output Directory: $packDir"
 Write-Host "- Portable Zip: $portableName"
-Write-Host "- Velopack Installer: $renamedSetupName"
+Write-Host "- NSIS Installer: $renamedSetupName"
 
 if (Test-Path $kernelStageDir) {
     Remove-Item -Recurse -Force $kernelStageDir

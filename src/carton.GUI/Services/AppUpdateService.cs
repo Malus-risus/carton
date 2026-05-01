@@ -842,12 +842,21 @@ public sealed class AppUpdateService : IAppUpdateService
             return null;
         }
 
+        var preferArm64 = RuntimeInformation.ProcessArchitecture == Architecture.Arm64;
+
         return release.Assets
             .Where(asset => asset.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
                             asset.Name.EndsWith(".msi", StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(asset => asset.Name.Contains("InnoSetup", StringComparison.OrdinalIgnoreCase))
             .ThenByDescending(asset => asset.Name.Contains("Setup", StringComparison.OrdinalIgnoreCase))
-            .ThenByDescending(asset => asset.Name.Contains("win-x64", StringComparison.OrdinalIgnoreCase))
+            .ThenByDescending(asset =>
+                preferArm64
+                    ? asset.Name.Contains("win-arm64", StringComparison.OrdinalIgnoreCase)
+                    : asset.Name.Contains("win-x64", StringComparison.OrdinalIgnoreCase))
+            .ThenByDescending(asset =>
+                preferArm64
+                    ? asset.Name.Contains("arm64", StringComparison.OrdinalIgnoreCase)
+                    : asset.Name.Contains("x64", StringComparison.OrdinalIgnoreCase))
             .ThenBy(asset => asset.Name.EndsWith(".msi", StringComparison.OrdinalIgnoreCase))
             .FirstOrDefault();
     }
