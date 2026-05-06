@@ -198,7 +198,7 @@ main() {
   appimagetool="$(resolve_appimagetool)"
 
   echo "Publishing ${APP_NAME} (${RID}, ${CONFIG})..."
-  "$PUBLISH_SCRIPT" "$RID" "$CONFIG"
+  "$PUBLISH_SCRIPT" "$RID" "$CONFIG" "$PUBLISH_OUTPUT" INSTALLER_BUILD
 
   if [[ ! -f "${PUBLISH_OUTPUT}/${APP_BINARY_NAME}" ]]; then
     echo "Published binary not found: ${PUBLISH_OUTPUT}/${APP_BINARY_NAME}" >&2

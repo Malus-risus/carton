@@ -121,13 +121,16 @@ Write-Host "`n==== 4. Creating NSIS Installer ===="
 $renamedSetupName = "$appName-$Version-$rid-Setup.exe"
 & $nsisBuilderScript `
     -AppName $appName `
-    -AppId "carton" `
+    -AppId "unifan.carton" `
     -Version $Version `
     -MainExe "$appName.exe" `
     -PublishDir $publishDirInstaller `
     -OutputDir $packDir `
     -OutputFileName $renamedSetupName `
-    -AppDataDirName "Carton"
+    -AppDataDirName "Carton" `
+    -Publisher "Unifan" `
+    -ProductRegKey "Software\Unifan\Carton" `
+    -IconPath "$repoRoot\src\carton.GUI\Assets\carton_icon.ico"
 
 Set-Content -Path "$packDir\channel.txt" -Value $Channel
 

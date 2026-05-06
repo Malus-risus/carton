@@ -427,6 +427,14 @@ public sealed class AppUpdateService : IAppUpdateService
 
     private bool DetermineSupportsInAppUpdates()
     {
+#if INSTALLER_BUILD
+        if (OperatingSystem.IsWindows())
+        {
+            // Windows installer builds apply updates via the downloaded NSIS setup.
+            return false;
+        }
+#endif
+
         try
         {
             var locator = _locator.Value;

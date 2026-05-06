@@ -175,27 +175,14 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          publish_dir="$GITHUB_WORKSPACE/artifacts/publish/${{ matrix.rid }}"
-          mkdir -p "$publish_dir"
-          props=(
-            -c Release
-            -r ${{ matrix.rid }}
-            -o "$publish_dir"
-            /p:PublishAot=true
-            /p:SelfContained=true
-            /p:StripSymbols=true
-            /p:DebugSymbols=false
-            /p:DebugType=None
-            /p:InvariantGlobalization=true
-            /p:IncludeNativeLibrariesForSelfExtract=true
-            /p:EnableCompressionInSingleFile=true
-          )
-          if [[ "${{ matrix.rid }}" == "linux-arm64" ]]; then
-            props+=(/p:ObjCopyName=aarch64-linux-gnu-objcopy)
-          fi
-          dotnet publish src/carton.GUI/carton.GUI.csproj "${props[@]}"
-          bash scripts/include-singbox-kernel.sh "${{ matrix.rid }}" "$publish_dir"
-          echo "PUBLISH_DIR=$publish_dir" >> "$GITHUB_ENV"
+          publish_dir_portable="$GITHUB_WORKSPACE/artifacts/publish/${{ matrix.rid }}-portable"
+          publish_dir_appimage="$GITHUB_WORKSPACE/artifacts/publish/${{ matrix.rid }}-appimage"
+          mkdir -p "$publish_dir_portable" "$publish_dir_appimage"
+          bash scripts/test-publish-linux-aot.sh "${{ matrix.rid }}" Release "$publish_dir_portable"
+          bash scripts/test-publish-linux-aot.sh "${{ matrix.rid }}" Release "$publish_dir_appimage" INSTALLER_BUILD
+
+          echo "PUBLISH_DIR_PORTABLE=$publish_dir_portable" >> "$GITHUB_ENV"
+          echo "PUBLISH_DIR_APPIMAGE=$publish_dir_appimage" >> "$GITHUB_ENV"
 
       - name: Publish (Windows)
         if: runner.os == 'Windows'
@@ -247,11 +234,11 @@ jobs:
         run: |
           pack_dir="$GITHUB_WORKSPACE/artifacts/pack/${{ matrix.rid }}-$CHANNEL"
           mkdir -p "$pack_dir"
-          find "$PUBLISH_DIR" -name '*.pdb' -delete
+          find "$PUBLISH_DIR_PORTABLE" -name '*.pdb' -delete
           portable_stage="$RUNNER_TEMP/portable-stage-${{ matrix.rid }}"
           rm -rf "$portable_stage"
           mkdir -p "$portable_stage"
-          cp -a "$PUBLISH_DIR"/. "$portable_stage"/
+          cp -a "$PUBLISH_DIR_PORTABLE"/. "$portable_stage"/
           touch "$portable_stage/.carton_portable_data"
           portable_name="${APP_NAME}-${VERSION}-${{ matrix.rid }}-portable.tar.gz"
           tar -C "$portable_stage" -czf "$pack_dir/$portable_name" .
@@ -290,7 +277,7 @@ jobs:
             --packVersion "$VERSION" \
             --channel "$package_channel" \
             --runtime ${{ matrix.rid }} \
-            --packDir "$PUBLISH_DIR" \
+            --packDir "$PUBLISH_DIR_APPIMAGE" \
             --mainExe '${{ matrix.mainExe }}' \
             --packTitle "$APP_NAME" \
             --icon "$icon_path" \
@@ -303,13 +290,16 @@ jobs:
           Get-ChildItem -Path $env:PUBLISH_DIR_INSTALLER -Filter '*.pdb' -Recurse | Remove-Item -Force
           & "$env:GITHUB_WORKSPACE\scripts\build-nsis-installer.ps1" `
             -AppName "$env:APP_NAME" `
-            -AppId "$env:APP_NAME" `
+            -AppId "unifan.$env:APP_NAME" `
             -Version "$env:VERSION" `
             -MainExe '${{ matrix.mainExe }}' `
             -PublishDir "$env:PUBLISH_DIR_INSTALLER" `
             -OutputDir "$env:PACK_DIR" `
             -OutputFileName "$env:APP_NAME-$env:VERSION-${{ matrix.rid }}-Setup.exe" `
-            -AppDataDirName "Carton"
+            -AppDataDirName "Carton" `
+            -Publisher "Unifan" `
+            -ProductRegKey "Software\Unifan\Carton" `
+            -IconPath "${{ matrix.icon }}"
 
       - name: Prepare release assets (Linux)
         if: runner.os == 'Linux'
