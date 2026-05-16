@@ -1,0 +1,39 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Styles.Resources>
+    <ResourceDictionary>
+      <FontFamily x:Key="SymbolThemeFontFamily">avares://FluentAvalonia/Fonts#Symbols</FontFamily>
+      <SolidColorBrush x:Key="CartonAccentBrush" Color="#0078D4" />
+      <SolidColorBrush x:Key="CartonAccentForegroundBrush" Color="White" />
+
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="CartonControlBackgroundChromeMediumBrush" Color="#FFF3F3F3" />
+          <SolidColorBrush x:Key="CartonControlBackgroundChromeMediumLowBrush" Color="#FFF8F8F8" />
+          <SolidColorBrush x:Key="CartonControlBackgroundChromeHighBrush" Color="#FFFFFFFF" />
+          <SolidColorBrush x:Key="CartonControlBackgroundBaseLowBrush" Color="#10000000" />
+          <SolidColorBrush x:Key="CartonControlBackgroundAltHighBrush" Color="#FFFFFFFF" />
+          <SolidColorBrush x:Key="CartonControlBackgroundAltMediumHighBrush" Color="#FFF7F7F7" />
+          <SolidColorBrush x:Key="CartonControlForegroundBaseHighBrush" Color="#FF1F1F1F" />
+          <SolidColorBrush x:Key="CartonControlForegroundBaseMediumHighBrush" Color="#CC000000" />
+          <SolidColorBrush x:Key="CartonControlForegroundBaseMediumBrush" Color="#99000000" />
+          <SolidColorBrush x:Key="CartonControlForegroundBaseMediumLowBrush" Color="#66000000" />
+          <SolidColorBrush x:Key="CartonControlForegroundBaseLowBrush" Color="#33000000" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="CartonControlBackgroundChromeMediumBrush" Color="#FF2B2B2B" />
+          <SolidColorBrush x:Key="CartonControlBackgroundChromeMediumLowBrush" Color="#FF242424" />
+          <SolidColorBrush x:Key="CartonControlBackgroundChromeHighBrush" Color="#FF1F1F1F" />
+          <SolidColorBrush x:Key="CartonControlBackgroundBaseLowBrush" Color="#26FFFFFF" />
+          <SolidColorBrush x:Key="CartonControlBackgroundAltHighBrush" Color="#FF1E1E1E" />
+          <SolidColorBrush x:Key="CartonControlBackgroundAltMediumHighBrush" Color="#FF2A2A2A" />
+          <SolidColorBrush x:Key="CartonControlForegroundBaseHighBrush" Color="#FFFFFFFF" />
+          <SolidColorBrush x:Key="CartonControlForegroundBaseMediumHighBrush" Color="#CCFFFFFF" />
+          <SolidColorBrush x:Key="CartonControlForegroundBaseMediumBrush" Color="#99FFFFFF" />
+          <SolidColorBrush x:Key="CartonControlForegroundBaseMediumLowBrush" Color="#66FFFFFF" />
+          <SolidColorBrush x:Key="CartonControlForegroundBaseLowBrush" Color="#33FFFFFF" />
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Styles.Resources>
+</Styles>

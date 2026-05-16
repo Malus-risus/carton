@@ -32,7 +32,7 @@
     </Grid>
 
     <Border Grid.Row="1" Margin="16"
-            BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+            BorderBrush="{DynamicResource CartonControlForegroundBaseMediumLowBrush}"
             BorderThickness="1"
             CornerRadius="8">
       <ListBox ItemsSource="{Binding Connections}"
@@ -50,7 +50,7 @@
         </ListBox.Styles>
         <ListBox.ItemTemplate>
           <DataTemplate DataType="vm:ConnectionItemViewModel">
-            <Border BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+            <Border BorderBrush="{DynamicResource CartonControlForegroundBaseLowBrush}"
                     BorderThickness="0,0,0,1"
                     Padding="0,8">
               <StackPanel Spacing="8">
@@ -62,19 +62,19 @@
                                TextTrimming="CharacterEllipsis"/>
                     <WrapPanel ItemSpacing="8">
                       <Border Padding="6,2"
-                              Background="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                              Background="{DynamicResource CartonControlForegroundBaseLowBrush}"
                               CornerRadius="4">
                         <TextBlock Text="{Binding Protocol}"
                                    FontSize="11"
-                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumHighBrush}"
+                                   Foreground="{DynamicResource CartonControlForegroundBaseMediumHighBrush}"
                                    TextTrimming="CharacterEllipsis"/>
                       </Border>
                       <Border Padding="6,2"
-                              Background="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                              Background="{DynamicResource CartonControlForegroundBaseLowBrush}"
                               CornerRadius="4">
                         <TextBlock Text="{Binding Outbound}"
                                    FontSize="11"
-                                   Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                                   Foreground="{DynamicResource CartonControlForegroundBaseHighBrush}"
                                    TextTrimming="CharacterEllipsis"/>
                       </Border>
                     </WrapPanel>
@@ -87,10 +87,10 @@
                                 HorizontalAlignment="Right">
                       <TextBlock Text="{Binding Upload}"
                                  FontSize="12"
-                                 Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                 Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
                       <TextBlock Text="{Binding Download}"
                                  FontSize="12"
-                                 Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                 Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
                     </StackPanel>
                     <Button Content="{DynamicResource Connections.Button.Close}"
                             Padding="8,4"
@@ -112,7 +112,7 @@
                   <TextBlock Grid.Column="1"
                              Text="->"
                              VerticalAlignment="Center"
-                             Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                             Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
                   <TextBlock Grid.Column="2"
                              Text="{Binding Destination}"
                              TextWrapping="Wrap"

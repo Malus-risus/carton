@@ -14,7 +14,7 @@
     </Style>
 
     <Style Selector="Border.clashModeTrack">
-      <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundBaseLowBrush}"/>
+      <Setter Property="Background" Value="{DynamicResource CartonControlBackgroundBaseLowBrush}"/>
       <Setter Property="CornerRadius" Value="14"/>
       <Setter Property="Padding" Value="4"/>
     </Style>
@@ -25,18 +25,18 @@
       <Setter Property="Padding" Value="0"/>
       <Setter Property="CornerRadius" Value="15"/>
       <Setter Property="Background" Value="Transparent"/>
-      <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource CartonControlForegroundBaseMediumLowBrush}"/>
       <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
     </Style>
 
     <Style Selector="Button.iconButton:pointerover">
-      <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundBaseLowBrush}"/>
-      <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}"/>
+      <Setter Property="Background" Value="{DynamicResource CartonControlBackgroundBaseLowBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource CartonControlForegroundBaseHighBrush}"/>
     </Style>
 
     <Style Selector="Button.iconButton:pressed">
-      <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumBrush}"/>
+      <Setter Property="Background" Value="{DynamicResource CartonControlBackgroundChromeMediumBrush}"/>
     </Style>
 
     <Style Selector="Button.portScopeButton">
@@ -48,12 +48,12 @@
     </Style>
 
     <Style Selector="Button.portScopeButton:pointerover">
-      <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"/>
-      <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}"/>
+      <Setter Property="Background" Value="{DynamicResource CartonControlBackgroundChromeMediumLowBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource CartonControlForegroundBaseHighBrush}"/>
     </Style>
 
     <Style Selector="Button.portScopeButton:pressed">
-      <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumBrush}"/>
+      <Setter Property="Background" Value="{DynamicResource CartonControlBackgroundChromeMediumBrush}"/>
     </Style>
 
     <Style Selector="Button.portScopeButton:disabled">
@@ -80,8 +80,8 @@
 
     <Style Selector="Button.portScopeButton.lanEnabled">
       <Setter Property="Background" Value="Transparent"/>
-      <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}"/>
-      <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource CartonAccentBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource CartonAccentBrush}"/>
     </Style>
 
     <Style Selector="TextBlock.portScopeButtonText">
@@ -92,7 +92,7 @@
 
     <Style Selector="RadioButton.clashModeSegment">
       <Setter Property="Background" Value="Transparent"/>
-      <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
       <Setter Property="BorderThickness" Value="0"/>
       <Setter Property="Padding" Value="14,8"/>
       <Setter Property="MinHeight" Value="32"/>
@@ -116,12 +116,12 @@
     </Style>
 
     <Style Selector="RadioButton.clashModeSegment:pointerover">
-      <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource CartonControlForegroundBaseHighBrush}"/>
     </Style>
 
     <Style Selector="RadioButton.clashModeSegment:checked">
-      <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumBrush}"/>
-      <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}"/>
+      <Setter Property="Background" Value="{DynamicResource CartonControlBackgroundChromeMediumBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource CartonControlForegroundBaseHighBrush}"/>
     </Style>
 
     <Style Selector="ComboBox.clashModeDropdown /template/ Popup#PART_Popup">
@@ -153,7 +153,7 @@
 
           <Grid ColumnDefinitions="*,180" ColumnSpacing="14">
             <Border Grid.Column="0"
-                    BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                    BorderBrush="{DynamicResource CartonControlForegroundBaseMediumLowBrush}"
                     BorderThickness="1"
                     CornerRadius="12"
                     Padding="12">
@@ -161,7 +161,7 @@
                 <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*" ColumnSpacing="10">
                   <TextBlock Grid.Column="0"
                              Text="{DynamicResource Dashboard.Field.Port}"
-                             Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                             Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"
                              VerticalAlignment="Center"/>
                   <TextBlock Grid.Column="1"
                              Text="{Binding InboundPortText}"
@@ -250,13 +250,13 @@
                              VerticalAlignment="Center"
                              TextWrapping="NoWrap"
                              TextTrimming="CharacterEllipsis"
-                             Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                             Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
                 </Grid>
               </StackPanel>
             </Border>
 
             <Border Grid.Column="1"
-                    BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                    BorderBrush="{DynamicResource CartonControlForegroundBaseMediumLowBrush}"
                     BorderThickness="1"
                     CornerRadius="12"
                     Padding="10">
@@ -266,19 +266,19 @@
                              Text="{DynamicResource Dashboard.Option.SystemProxy}"
                              VerticalAlignment="Center"/>
                   <ToggleSwitch Grid.Column="1"
-                                Classes="OnlySwitch"
+
                                 IsChecked="{Binding EnableSystemProxy}"/>
                 </Grid>
 
                 <Border Height="1"
-                        Background="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"/>
+                        Background="{DynamicResource CartonControlForegroundBaseMediumLowBrush}"/>
 
                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                   <TextBlock Grid.Column="0"
                              Text="{DynamicResource Dashboard.Option.Tun}"
                              VerticalAlignment="Center"/>
                     <ToggleSwitch Grid.Column="1"
-                                  Classes="OnlySwitch"
+
                                   IsChecked="{Binding EnableTunInbound}"
                                   IsEnabled="{Binding ShowStartupSelector}"/>
                 </Grid>
@@ -290,7 +290,7 @@
             <ItemsControl ItemsSource="{Binding AvailableProfiles}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate DataType="vm:DashboardProfileItemViewModel">
-                  <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                  <Border BorderBrush="{DynamicResource CartonControlForegroundBaseMediumLowBrush}"
                           BorderThickness="0,0,0,1"
                           Padding="6,10">
                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
@@ -313,7 +313,7 @@
             <TextBlock Text="{Binding StartupStatus}"
                        IsVisible="{Binding StartupStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                        TextWrapping="Wrap"
-                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                       Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
           </StackPanel>
         </StackPanel>
       </Border>
@@ -343,14 +343,14 @@
                                    FontWeight="SemiBold"/>
                         <TextBlock Text="{Binding TotalUpload}"
                                    FontSize="13"
-                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                   Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
                       </StackPanel>
 
                       <controls:SparklineChart Height="60"
                                                Samples="{Binding UploadTrafficSamples}"
-                                               GridBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
-                                               FillBrush="{DynamicResource SystemAccentColor}"
-                                               LineBrush="{DynamicResource SystemAccentColor}"/>
+                                               GridBrush="{DynamicResource CartonControlForegroundBaseMediumLowBrush}"
+                                               FillBrush="{DynamicResource CartonAccentBrush}"
+                                               LineBrush="{DynamicResource CartonAccentBrush}"/>
                     </StackPanel>
                   </Border>
 
@@ -373,14 +373,14 @@
                                    FontWeight="SemiBold"/>
                         <TextBlock Text="{Binding TotalDownload}"
                                    FontSize="13"
-                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                   Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
                       </StackPanel>
 
                       <controls:SparklineChart Height="60"
                                                Samples="{Binding DownloadTrafficSamples}"
-                                               GridBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
-                                               FillBrush="{DynamicResource SystemAccentColor}"
-                                               LineBrush="{DynamicResource SystemAccentColor}"/>
+                                               GridBrush="{DynamicResource CartonControlForegroundBaseMediumLowBrush}"
+                                               FillBrush="{DynamicResource CartonAccentBrush}"
+                                               LineBrush="{DynamicResource CartonAccentBrush}"/>
                     </StackPanel>
                   </Border>
 
@@ -411,7 +411,7 @@
                       <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
                         <TextBlock Text="{DynamicResource Dashboard.KernelMemory.KernelVersion}"
                                    FontSize="12"
-                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                   Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
                         <TextBlock Grid.Column="1"
                                    Text="{Binding KernelVersion}"
                                    FontSize="13"
@@ -421,7 +421,7 @@
                       <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
                         <TextBlock Text="{DynamicResource Dashboard.KernelMemory.MemoryUsage}"
                                    FontSize="12"
-                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                   Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
                         <TextBlock Grid.Column="1"
                                    Text="{Binding MemoryUsage}"
                                    FontSize="13"
@@ -434,7 +434,7 @@
                             <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
                               <TextBlock Text="{Binding Name}"
                                          FontSize="12"
-                                         Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                         Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
                               <TextBlock Grid.Column="1"
                                          Text="{Binding LatencyText}"
                                          FontSize="13"

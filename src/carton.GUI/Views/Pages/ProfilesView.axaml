@@ -42,34 +42,34 @@
 			<Setter Property="Padding" Value="0"/>
 			<Setter Property="CornerRadius" Value="15"/>
 			<Setter Property="Background" Value="Transparent"/>
-			<Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource CartonControlForegroundBaseMediumLowBrush}"/>
 			<Setter Property="BorderThickness" Value="1"/>
-			<Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
 		</Style>
 		<Style Selector="Button.iconButton:pointerover">
-			<Setter Property="Background" Value="{DynamicResource SystemControlBackgroundBaseLowBrush}"/>
-			<Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}"/>
+			<Setter Property="Background" Value="{DynamicResource CartonControlBackgroundBaseLowBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource CartonControlForegroundBaseHighBrush}"/>
 		</Style>
 		<Style Selector="Button.iconButton:pressed">
-			<Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumBrush}"/>
+			<Setter Property="Background" Value="{DynamicResource CartonControlBackgroundChromeMediumBrush}"/>
 		</Style>
 		<Style Selector="Button.iconButton.saveButton">
-			<Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource CartonControlForegroundBaseMediumLowBrush}"/>
 		</Style>
 		<Style Selector="Button.iconButton.saveButton:enabled">
-			<Setter Property="Background" Value="{DynamicResource SystemAccentColor}"/>
-			<Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}"/>
-			<Setter Property="Foreground" Value="{DynamicResource SystemAccentColorForeground}"/>
+			<Setter Property="Background" Value="{DynamicResource CartonAccentBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource CartonAccentBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource CartonAccentForegroundBrush}"/>
 		</Style>
 		<Style Selector="Button.iconButton.saveButton:enabled:pointerover">
-			<Setter Property="Background" Value="{DynamicResource SystemAccentColor}"/>
-			<Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}"/>
-			<Setter Property="Foreground" Value="{DynamicResource SystemAccentColorForeground}"/>
+			<Setter Property="Background" Value="{DynamicResource CartonAccentBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource CartonAccentBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource CartonAccentForegroundBrush}"/>
 		</Style>
 		<Style Selector="Button.iconButton.saveButton:enabled:pressed">
-			<Setter Property="Background" Value="{DynamicResource SystemAccentColor}"/>
-			<Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}"/>
-			<Setter Property="Foreground" Value="{DynamicResource SystemAccentColorForeground}"/>
+			<Setter Property="Background" Value="{DynamicResource CartonAccentBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource CartonAccentBrush}"/>
+			<Setter Property="Foreground" Value="{DynamicResource CartonAccentForegroundBrush}"/>
 			<Setter Property="Opacity" Value="0.88"/>
 		</Style>
 		<Style Selector="Button.searchChip">
@@ -84,7 +84,7 @@
  	</UserControl.Styles>
 
 	<Grid RowDefinitions="Auto,Auto,Auto,*">
-		<Border Grid.Row="0" Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}" Padding="6">
+		<Border Grid.Row="0" Background="{DynamicResource CartonControlBackgroundChromeMediumBrush}" Padding="6">
 			<Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
 				<Button Grid.Column="0"
 						Classes="iconButton"
@@ -143,8 +143,8 @@
 		<Border Grid.Row="1"
 				x:Name="ConfigSearchBar"
 				IsVisible="False"
-				Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
-				BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+				Background="{DynamicResource CartonControlBackgroundChromeMediumBrush}"
+				BorderBrush="{DynamicResource CartonControlForegroundBaseMediumLowBrush}"
 				BorderThickness="0,0,0,1"
 				Padding="10,8">
 			<Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="8">
@@ -201,8 +201,8 @@
 
 		<Border Grid.Row="2"
 				IsVisible="{Binding ImportStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-				Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
-				BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+				Background="{DynamicResource CartonControlBackgroundChromeMediumBrush}"
+				BorderBrush="{DynamicResource CartonControlForegroundBaseMediumLowBrush}"
 				BorderThickness="0,0,0,1"
 				Padding="10,6">
 			<StackPanel Orientation="Horizontal" Spacing="8">
@@ -213,9 +213,9 @@
 
 		<Grid Grid.Row="3">
 			<ScrollViewer IsVisible="{Binding !IsProfileFormMode}"
-						  Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}">
+						  Background="{DynamicResource CartonControlBackgroundChromeMediumBrush}">
 				<Border Margin="20"
-						BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+						BorderBrush="{DynamicResource CartonControlForegroundBaseMediumLowBrush}"
 						BorderThickness="1"
 						CornerRadius="8"
 						Padding="12">
@@ -235,7 +235,7 @@
 						<ItemsControl ItemsSource="{Binding Profiles}">
 							<ItemsControl.ItemTemplate>
 								<DataTemplate>
-									<Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+									<Border BorderBrush="{DynamicResource CartonControlForegroundBaseMediumLowBrush}"
 											BorderThickness="0,0,0,1"
 											Padding="6,12">
 										<Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
@@ -253,7 +253,7 @@
 															   FontSize="18"
 															   FontWeight="SemiBold"/>
 													<TextBlock FontSize="13"
-															   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}">
+															   Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}">
 														<Run Text="{DynamicResource Profiles.List.LastUpdatedLabel}"/>
 														<Run Text="{Binding LastUpdated}"/>
 													</TextBlock>
@@ -290,7 +290,7 @@
 			</ScrollViewer>
 
 			<ScrollViewer IsVisible="{Binding IsProfileFormMode}"
-						  Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}">
+						  Background="{DynamicResource CartonControlBackgroundChromeMediumBrush}">
 				<StackPanel Margin="20" Spacing="16" MaxWidth="500">
 					<TextBlock Text="{Binding ProfileFormTitle}" FontSize="18" FontWeight="SemiBold"/>
 
@@ -345,7 +345,7 @@
 							  IsVisible="{Binding IsRemoteProfile}">
 							<TextBlock Grid.Column="0" Text="{DynamicResource Profiles.Form.AutoUpdateLabel}" VerticalAlignment="Center"/>
 							<ToggleSwitch Grid.Column="2"
-										  Classes="OnlySwitch"
+
 										  IsChecked="{Binding NewAutoUpdate}"/>
 						</Grid>
 
@@ -362,7 +362,7 @@
 							<TextBlock Grid.Column="0" Text="{DynamicResource Profiles.Form.LastUpdatedLabel}" VerticalAlignment="Center"/>
 							<TextBlock Grid.Column="1" Text="{Binding EditLastUpdated}"
 									   VerticalAlignment="Center"
-									   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+									   Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
 						</Grid>
 
 						<Grid ColumnDefinitions="100,*" ColumnSpacing="12"
@@ -398,7 +398,7 @@
 
 					<TextBlock Text="{Binding NewProfileStatus}"
 							   IsVisible="{Binding NewProfileStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-							   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+							   Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
 
 					<ProgressBar IsIndeterminate="True"
 								 IsVisible="{Binding IsCreating}"
@@ -419,12 +419,12 @@
 
 			<Grid Grid.RowSpan="3"
 				  IsVisible="{Binding ShowConfigFullscreenView}"
-				  Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
+				  Background="{DynamicResource CartonControlBackgroundChromeMediumBrush}"
 				  Panel.ZIndex="10">
 				<Grid Margin="12">
 					<Border x:Name="ConfigEditorHost"
-							Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
-							BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+							Background="{DynamicResource CartonControlBackgroundBaseLowBrush}"
+							BorderBrush="{DynamicResource CartonControlForegroundBaseMediumLowBrush}"
 							BorderThickness="1"
 							CornerRadius="10"
 							ClipToBounds="True">

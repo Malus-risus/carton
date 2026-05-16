@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="carton.App"
              xmlns:local="using:carton"
+             xmlns:sty="using:FluentAvalonia.Styling"
              xmlns:vm="using:carton.ViewModels"
              RequestedThemeVariant="Default">
 
@@ -11,9 +12,6 @@
 
   <Application.Resources>
     <local:ConnectionStatusConverter x:Key="ConnectionStatusConverter"/>
-    <local:NavigationIconConverter x:Key="NavigationIconConverter"/>
-    <local:NavigationTitleConverter x:Key="NavigationTitleConverter"/>
-    <local:NavigationIndicatorMarginConverter x:Key="NavigationIndicatorMarginConverter"/>
     <local:ResponsiveItemWidthConverter x:Key="ResponsiveItemWidthConverter"/>
     <local:LatencyForegroundConverter x:Key="LatencyForegroundConverter"/>
     <local:KernelDownloadMirrorDisplayConverter x:Key="KernelDownloadMirrorDisplayConverter"/>
@@ -25,10 +23,12 @@
   </Application.Resources>
 
   <Application.Styles>
-    <FluentTheme />
+    <sty:FluentAvaloniaTheme PreferSystemTheme="False"
+                             PreferUserAccentColor="False"/>
+    <StyleInclude Source="/Resources/FluentAvaloniaLite.axaml" />
 
     <Style Selector="Border.card">
-      <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumBrush}"/>
+      <Setter Property="Background" Value="{DynamicResource CartonControlBackgroundChromeMediumBrush}"/>
       <Setter Property="CornerRadius" Value="8"/>
       <Setter Property="BoxShadow" Value="0 2 8 0 #10000000"/>
     </Style>
@@ -47,10 +47,25 @@
     </Style>
 
     <Style Selector="Button.accent">
-      <Setter Property="Background" Value="{DynamicResource SystemAccentColor}"/>
-      <Setter Property="Foreground" Value="{DynamicResource SystemAccentColorForeground}"/>
+      <Setter Property="Background" Value="{DynamicResource CartonAccentBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource CartonAccentBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource CartonAccentForegroundBrush}"/>
       <Setter Property="CornerRadius" Value="4"/>
       <Setter Property="Padding" Value="16,6"/>
+    </Style>
+
+    <Style Selector="Button.accent:pointerover">
+      <Setter Property="Background" Value="{DynamicResource CartonAccentBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource CartonAccentBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource CartonAccentForegroundBrush}"/>
+      <Setter Property="Opacity" Value="0.92"/>
+    </Style>
+
+    <Style Selector="Button.accent:pressed">
+      <Setter Property="Background" Value="{DynamicResource CartonAccentBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource CartonAccentBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource CartonAccentForegroundBrush}"/>
+      <Setter Property="Opacity" Value="0.84"/>
     </Style>
 
     <Style Selector="Button">
@@ -83,81 +98,6 @@
       <Setter Property="CornerRadius" Value="4"/>
     </Style>
 
-    <Style Selector="ToggleSwitch">
-      <Setter Property="MinWidth" Value="0"/>
-      <Setter Property="VerticalAlignment" Value="Center"/>
-    </Style>
-
-    <Style Selector="ToggleSwitch.OnlySwitch">
-      <Setter Property="Content" Value=""/>
-      <Setter Property="OnContent" Value=""/>
-      <Setter Property="OffContent" Value=""/>
-      <Setter Property="Width" Value="40"/>
-      <Setter Property="Padding" Value="0"/>
-      <Setter Property="HorizontalAlignment" Value="Right"/>
-      <Setter Property="RenderTransform" Value="translateY(-2px)"/>
-    </Style>
-
-    <Style Selector="ToggleSwitch.OnlySwitch /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Height" Value="0"/>
-      <Setter Property="IsVisible" Value="False"/>
-      <Setter Property="Margin" Value="0"/>
-    </Style>
-
-    <Style Selector="ToggleSwitch.OnlySwitch /template/ ContentPresenter#PART_OffContentPresenter">
-      <Setter Property="Height" Value="0"/>
-      <Setter Property="IsVisible" Value="False"/>
-      <Setter Property="Margin" Value="0"/>
-    </Style>
-
-    <Style Selector="ToggleSwitch.OnlySwitch /template/ ContentPresenter#PART_OnContentPresenter">
-      <Setter Property="Height" Value="0"/>
-      <Setter Property="IsVisible" Value="False"/>
-      <Setter Property="Margin" Value="0"/>
-    </Style>
-
-    <Style Selector="ListBox.navPane">
-      <Setter Property="Background" Value="Transparent"/>
-      <Setter Property="BorderThickness" Value="0"/>
-      <Setter Property="Padding" Value="0"/>
-    </Style>
-
-    <Style Selector="ListBox.navPane > ListBoxItem">
-      <Setter Property="Padding" Value="0"/>
-      <Setter Property="Margin" Value="6,3"/>
-      <Setter Property="Height" Value="40"/>
-      <Setter Property="Background" Value="Transparent"/>
-      <Setter Property="BorderBrush" Value="Transparent"/>
-      <Setter Property="BorderThickness" Value="0"/>
-      <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}"/>
-      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-      <Setter Property="VerticalContentAlignment" Value="Stretch"/>
-      <Setter Property="Template">
-        <ControlTemplate>
-          <Border x:Name="NavItemBackground"
-                  Background="{TemplateBinding Background}"
-                  CornerRadius="10">
-            <ContentPresenter Margin="12,0,12,0"
-                              Content="{TemplateBinding Content}"
-                              ContentTemplate="{TemplateBinding ContentTemplate}"
-                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
-          </Border>
-        </ControlTemplate>
-      </Setter>
-    </Style>
-
-    <Style Selector="ListBox.navPane > ListBoxItem:pointerover /template/ Border#NavItemBackground">
-      <Setter Property="Background" Value="#0F808080"/>
-    </Style>
-
-    <Style Selector="ListBox.navPane > ListBoxItem:selected /template/ Border#NavItemBackground">
-      <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundBaseLowBrush}"/>
-    </Style>
-
-    <Style Selector="ListBox.navPane > ListBoxItem:selected">
-      <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}"/>
-    </Style>
   </Application.Styles>
 
 </Application>

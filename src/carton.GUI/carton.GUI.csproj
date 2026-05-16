@@ -19,6 +19,20 @@
 		<DefineConstants>$(DefineConstants);$(CartonBuildMacro)</DefineConstants>
 	</PropertyGroup>
 
+	<PropertyGroup Condition="'$(PublishAot)' == 'true'">
+		<OptimizationPreference>Size</OptimizationPreference>
+		<TrimMode>full</TrimMode>
+		<DebuggerSupport>false</DebuggerSupport>
+		<EventSourceSupport>false</EventSourceSupport>
+		<Http3Support>false</Http3Support>
+		<HttpActivityPropagationSupport>false</HttpActivityPropagationSupport>
+		<MetadataUpdaterSupport>false</MetadataUpdaterSupport>
+		<MetricsSupport>false</MetricsSupport>
+		<SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
+		<StackTraceSupport>false</StackTraceSupport>
+		<XmlResolverIsNetworkingEnabledByDefault>false</XmlResolverIsNetworkingEnabledByDefault>
+	</PropertyGroup>
+
 	<ItemGroup>
 		<RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="3" />
 		<Folder Include="Models\" />
@@ -35,7 +49,7 @@
 	<ItemGroup>
 		<PackageReference Include="Avalonia" Version="11.3.14" />
 		<PackageReference Include="Avalonia.Desktop" Version="11.3.14" />
-		<PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.14" />
+		<PackageReference Include="FluentAvaloniaUI" Version="2.5.1" />
 		<PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.14" />
 		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
 		<PackageReference Include="NuGet.Versioning" Version="7.0.3" />
@@ -48,11 +62,6 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\carton.Core\carton.Core.csproj" />
-	</ItemGroup>
-
-	<ItemGroup>
-		<TrimmerRootAssembly Include="carton.Core" />
-		<TrimmerRootAssembly Include="carton" />
 	</ItemGroup>
 
 	<Target Name="CopyEnableLoopbackToolToOutput"
