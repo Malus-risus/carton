@@ -2,34 +2,124 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:ui="using:FluentAvalonia.UI.Controls"
              xmlns:vm="using:carton.ViewModels"
              mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="600"
              x:Class="carton.Views.Pages.SettingsView"
              x:DataType="vm:SettingsViewModel">
 
-  <ScrollViewer>
-    <StackPanel Margin="20" Spacing="16">
-      <TextBlock Text="{DynamicResource Settings.Section.Kernel}" FontSize="18" FontWeight="SemiBold"/>
+  <UserControl.Styles>
+    <Style Selector="TextBlock.settingsSectionTitle">
+      <Setter Property="FontSize" Value="18"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Margin" Value="0,10,0,6"/>
+    </Style>
 
-      <Border Classes="card" Padding="16">
-        <StackPanel Spacing="12">
-          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-            <TextBlock Grid.Column="0" Text="{DynamicResource Settings.Kernel.Version}" VerticalAlignment="Center"/>
-            <TextBlock Grid.Column="1" Text="{Binding KernelVersion}" 
-                       FontWeight="Medium" VerticalAlignment="Center"/>
-            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
-              <Button Content="{DynamicResource Settings.Kernel.CheckUpdate}" Command="{Binding CheckUpdateCommand}"
-                      IsEnabled="{Binding CanCheckKernelUpdate}"/>
+    <Style Selector="Border.settingsItem">
+      <Setter Property="Background" Value="{DynamicResource CartonSettingsItemBackgroundBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource CartonSettingsItemBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="16,12"/>
+      <Setter Property="MinHeight" Value="58"/>
+    </Style>
+
+    <Style Selector="Border.settingsItem:pointerover">
+      <Setter Property="Background" Value="{DynamicResource CartonSettingsItemPointerOverBackgroundBrush}"/>
+    </Style>
+
+    <Style Selector="Button.settingsItemLink">
+      <Setter Property="Background" Value="{DynamicResource CartonSettingsItemBackgroundBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource CartonSettingsItemBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="16,12"/>
+      <Setter Property="MinHeight" Value="58"/>
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+      <Setter Property="VerticalContentAlignment" Value="Stretch"/>
+    </Style>
+
+    <Style Selector="Button.settingsItemLink:pointerover">
+      <Setter Property="Background" Value="{DynamicResource CartonSettingsItemPointerOverBackgroundBrush}"/>
+    </Style>
+
+    <Style Selector="TextBlock.settingsTitle">
+      <Setter Property="FontWeight" Value="Medium"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style Selector="TextBlock.settingsDescription">
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Foreground" Value="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+
+    <Style Selector="ComboBox.settingsAction">
+      <Setter Property="MinWidth" Value="160"/>
+    </Style>
+
+    <Style Selector="Button.accentColorButton">
+      <Setter Property="Width" Value="42"/>
+      <Setter Property="Height" Value="42"/>
+      <Setter Property="MinWidth" Value="0"/>
+      <Setter Property="MinHeight" Value="0"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="Margin" Value="1"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+    </Style>
+  </UserControl.Styles>
+
+  <ScrollViewer>
+    <StackPanel Margin="20" Spacing="8">
+      <TextBlock Classes="settingsSectionTitle" Text="{DynamicResource Settings.Section.Kernel}"/>
+
+      <StackPanel Spacing="6">
+        <Border Classes="settingsItem">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <StackPanel Spacing="3" VerticalAlignment="Center">
+              <TextBlock Classes="settingsTitle" Text="{DynamicResource Settings.Kernel.Version}"/>
+              <TextBlock Classes="settingsDescription" Text="{Binding KernelVersion}"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1"
+                        Orientation="Horizontal"
+                        Spacing="8"
+                        VerticalAlignment="Center">
+              <Grid VerticalAlignment="Center" MinWidth="92">
+                <StackPanel Spacing="3" IsVisible="{Binding !IsCheckingKernelUpdate}">
+                  <TextBlock Classes="settingsTitle"
+                             Text="{DynamicResource Settings.Kernel.Latest}"
+                             HorizontalAlignment="Right"/>
+                  <TextBlock Classes="settingsDescription"
+                             Text="{Binding LatestVersion}"
+                             HorizontalAlignment="Right"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal"
+                            Spacing="8"
+                            IsVisible="{Binding IsCheckingKernelUpdate}">
+                  <ProgressBar Width="72" Height="4" IsIndeterminate="True" VerticalAlignment="Center"/>
+                  <TextBlock Classes="settingsDescription"
+                             Text="{DynamicResource Settings.Kernel.Checking}"
+                             VerticalAlignment="Center"/>
+                </StackPanel>
+              </Grid>
+              <Button Content="{DynamicResource Settings.Kernel.CheckUpdate}"
+                      Command="{Binding CheckUpdateCommand}"
+                      IsEnabled="{Binding CanCheckKernelUpdate}"
+                      VerticalAlignment="Center"/>
             </StackPanel>
           </Grid>
+        </Border>
 
-          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
-            <TextBlock Grid.Column="0" Text="{DynamicResource Settings.Kernel.Mirror}" VerticalAlignment="Center"/>
+        <Border Classes="settingsItem">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <TextBlock Classes="settingsTitle" Text="{DynamicResource Settings.Kernel.Mirror}"/>
             <ComboBox Grid.Column="1"
+                      Classes="settingsAction"
                       ItemsSource="{Binding KernelDownloadMirrors}"
                       SelectedItem="{Binding SelectedKernelDownloadMirror}"
-                      HorizontalAlignment="Left"
-                      MinWidth="150">
+                      VerticalAlignment="Center">
               <ComboBox.ItemTemplate>
                 <DataTemplate>
                   <TextBlock Text="{Binding Converter={StaticResource KernelDownloadMirrorDisplayConverter}}"/>
@@ -37,14 +127,17 @@
               </ComboBox.ItemTemplate>
             </ComboBox>
           </Grid>
+        </Border>
 
-          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
-            <TextBlock Grid.Column="0" Text="{DynamicResource Settings.Kernel.CacheCleanupPolicy}" VerticalAlignment="Center"/>
+        <Border Classes="settingsItem">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <TextBlock Classes="settingsTitle" Text="{DynamicResource Settings.Kernel.CacheCleanupPolicy}"/>
             <ComboBox Grid.Column="1"
+                      Classes="settingsAction"
+                      MinWidth="220"
                       ItemsSource="{Binding KernelCacheCleanupPolicies}"
                       SelectedItem="{Binding SelectedKernelCacheCleanupPolicy}"
-                      HorizontalAlignment="Left"
-                      MinWidth="200">
+                      VerticalAlignment="Center">
               <ComboBox.ItemTemplate>
                 <DataTemplate>
                   <TextBlock Text="{Binding Converter={StaticResource KernelCacheCleanupPolicyDisplayConverter}}"/>
@@ -52,133 +145,282 @@
               </ComboBox.ItemTemplate>
             </ComboBox>
           </Grid>
+        </Border>
 
-          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" IsVisible="{Binding IsKernelInstalled}">
-            <TextBlock Grid.Column="0" Text="{DynamicResource Settings.Kernel.Path}" VerticalAlignment="Center"/>
-            <TextBlock Grid.Column="1" Text="{Binding KernelPath}" 
-                       TextTrimming="CharacterEllipsis"
-                       FontSize="11"
-                       Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
+        <Button Classes="settingsItemLink"
+                Command="{Binding OpenKernelFolderCommand}"
+                IsVisible="{Binding IsKernelInstalled}"
+                ToolTip.Tip="{DynamicResource Settings.Data.OpenFolder}">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <StackPanel Spacing="3">
+              <TextBlock Classes="settingsTitle" Text="{DynamicResource Settings.Kernel.Path}"/>
+              <TextBlock Classes="settingsDescription"
+                         Text="{Binding KernelPath}"
+                         TextTrimming="CharacterEllipsis"
+                         MaxLines="1"/>
+            </StackPanel>
+            <TextBlock Grid.Column="1"
+                       Text="&#xE838;"
+                       FontFamily="Segoe Fluent Icons"
+                       FontSize="16"
+                       Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"
+                       VerticalAlignment="Center"/>
           </Grid>
+        </Button>
 
-          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
-            <TextBlock Grid.Column="0" Text="{DynamicResource Settings.Kernel.Latest}" VerticalAlignment="Center"/>
-            <Grid Grid.Column="1">
-              <TextBlock Text="{Binding LatestVersion}"
-                         VerticalAlignment="Center"
-                         IsVisible="{Binding !IsCheckingKernelUpdate}">
-                <TextBlock.Transitions>
-                  <Transitions>
-                    <DoubleTransition Property="Opacity" Duration="0:0:0.18"/>
-                  </Transitions>
-                </TextBlock.Transitions>
-              </TextBlock>
-              <StackPanel Orientation="Horizontal"
-                          Spacing="8"
-                          VerticalAlignment="Center"
-                          IsVisible="{Binding IsCheckingKernelUpdate}">
-                <ProgressBar Width="72"
-                             Height="4"
-                             IsIndeterminate="True"/>
-                <TextBlock Text="{DynamicResource Settings.Kernel.Checking}"
-                           Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"
-                           VerticalAlignment="Center"/>
-              </StackPanel>
-            </Grid>
-          </Grid>
+        <Border Classes="settingsItem" IsVisible="{Binding IsUpdatingKernel}">
+          <StackPanel Spacing="8">
+            <ProgressBar IsIndeterminate="{Binding IsKernelProgressIndeterminate}"
+                         Value="{Binding UpdateProgress}"
+                         Maximum="100"
+                         Height="4"/>
+            <TextBlock Classes="settingsDescription" Text="{Binding UpdateStatus}"/>
+          </StackPanel>
+        </Border>
 
-          <ProgressBar IsIndeterminate="{Binding IsKernelProgressIndeterminate}"
-                       Value="{Binding UpdateProgress}"
-                       Maximum="100"
-                       IsVisible="{Binding IsUpdatingKernel}"
-                       Height="4"/>
-          
-          <TextBlock Text="{Binding UpdateStatus}"
-                     IsVisible="{Binding IsUpdatingKernel}"
-                     FontSize="12"
-                     Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
-
+        <Border Classes="settingsItem">
           <StackPanel Orientation="Horizontal" Spacing="8">
-            <Button Content="{DynamicResource Settings.Kernel.Update}" Command="{Binding UpdateKernelCommand}"
+            <Button Content="{DynamicResource Settings.Kernel.Update}"
+                    Command="{Binding UpdateKernelCommand}"
                     Classes="accent"
                     IsEnabled="{Binding !IsUpdatingKernel}"
                     IsVisible="{Binding IsKernelInstalled}"/>
-            <Button Content="{DynamicResource Settings.Kernel.Install}" Command="{Binding UpdateKernelCommand}"
+            <Button Content="{DynamicResource Settings.Kernel.Install}"
+                    Command="{Binding UpdateKernelCommand}"
                     Classes="accent"
                     IsEnabled="{Binding !IsUpdatingKernel}"
                     IsVisible="{Binding !IsKernelInstalled}"/>
-            <Button Content="{DynamicResource Settings.Kernel.InstallCustom}" Command="{Binding InstallCustomKernelCommand}"
+            <Button Content="{DynamicResource Settings.Kernel.InstallCustom}"
+                    Command="{Binding InstallCustomKernelCommand}"
                     IsEnabled="{Binding !IsUpdatingKernel}"/>
-            <Button Content="{DynamicResource Settings.Kernel.Uninstall}" Command="{Binding UninstallKernelCommand}"
+            <Button Content="{DynamicResource Settings.Kernel.Uninstall}"
+                    Command="{Binding UninstallKernelCommand}"
                     IsEnabled="{Binding CanUninstallKernel}"
                     IsVisible="{Binding IsKernelInstalled}"/>
           </StackPanel>
-        </StackPanel>
-      </Border>
+        </Border>
+      </StackPanel>
 
-      <TextBlock Text="{DynamicResource Settings.Section.General}" FontSize="18" FontWeight="SemiBold" Margin="0,8,0,0"/>
+      <TextBlock Classes="settingsSectionTitle" Text="{DynamicResource Settings.Section.General}"/>
 
-      <Border Classes="card" Padding="16">
-        <StackPanel Spacing="12">
-          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-            <TextBlock Grid.Column="0" Text="{DynamicResource Settings.General.StartAtLogin}" VerticalAlignment="Center"/>
+      <StackPanel Spacing="6">
+        <Border Classes="settingsItem">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <TextBlock Classes="settingsTitle" Text="{DynamicResource Settings.Appearance.Theme}"/>
+            <ComboBox Grid.Column="1"
+                      Classes="settingsAction"
+                      ItemsSource="{Binding Themes}"
+                      SelectedValue="{Binding SelectedTheme}"
+                      SelectedValueBinding="{Binding Theme}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding DisplayName}"/>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </Grid>
+        </Border>
+        <ui:SettingsExpander Header="{DynamicResource Settings.Appearance.ThemeAccent}"
+                             Description="{DynamicResource Settings.Appearance.ThemeAccent.Description}"
+                             IsExpanded="{Binding IsThemeAccentExpanded, Mode=TwoWay}">
+          <ui:SettingsExpander.IconSource>
+            <ui:FontIconSource FontFamily="Segoe Fluent Icons" Glyph="&#xE790;" />
+          </ui:SettingsExpander.IconSource>
+          <ui:SettingsExpander.Footer>
+            <StackPanel Orientation="Horizontal"
+                        Spacing="10"
+                        VerticalAlignment="Center">
+              <RadioButton Content="{DynamicResource Settings.Appearance.ThemeAccent.SystemDefault}"
+                           GroupName="ThemeAccentMode"
+                           IsChecked="{Binding UseSystemThemeAccent, Mode=OneWay}"
+                           Click="OnUseSystemThemeAccentClick"
+                           Tag="System"/>
+              <RadioButton Content="{DynamicResource Settings.Appearance.ThemeAccent.Custom}"
+                           GroupName="ThemeAccentMode"
+                           IsChecked="{Binding UseCustomThemeAccent, Mode=OneWay}"
+                           Click="OnUseCustomThemeAccentClick"
+                           Tag="Custom"/>
+            </StackPanel>
+          </ui:SettingsExpander.Footer>
+
+          <ui:SettingsExpanderItem IsClickEnabled="False">
+            <ui:SettingsExpanderItem.Content>
+              <ContentControl Content="{Binding ThemeAccentContent}">
+                <ContentControl.ContentTemplate>
+                  <DataTemplate DataType="vm:SettingsViewModel">
+                    <StackPanel Spacing="0" Margin="0,4,0,0">
+                      <DockPanel LastChildFill="False" Margin="36,6,0,8">
+                        <TextBlock DockPanel.Dock="Left"
+                                   Classes="settingsTitle"
+                                   Text="{DynamicResource Settings.Appearance.ThemeAccent.PreviewColor}"
+                                   VerticalAlignment="Center"/>
+                        <StackPanel DockPanel.Dock="Right" Spacing="4">
+                          <Border Width="180"
+                                  Height="32"
+                                  CornerRadius="4"
+                                  ClipToBounds="True">
+                            <Grid ColumnDefinitions="*,*,*,*,*">
+                              <Border Grid.Column="0" Background="{DynamicResource SystemAccentColorLight3}"/>
+                              <Border Grid.Column="1" Background="{DynamicResource SystemAccentColorLight1}" Margin="1,0,0,0"/>
+                              <Border Grid.Column="2" Background="{DynamicResource SystemAccentColor}" Margin="1,0,0,0"/>
+                              <Border Grid.Column="3" Background="{DynamicResource SystemAccentColorDark1}" Margin="1,0,0,0"/>
+                              <Border Grid.Column="4" Background="{DynamicResource SystemAccentColorDark3}" Margin="1,0,0,0"/>
+                            </Grid>
+                          </Border>
+                          <TextBlock Classes="settingsDescription"
+                                     Text="{Binding ThemeAccentSourceDisplay}"
+                                     HorizontalAlignment="Right"/>
+                        </StackPanel>
+                      </DockPanel>
+
+                      <Border Background="{DynamicResource CartonControlBackgroundBaseLowBrush}"
+                              Height="1"
+                              Margin="-16,8,-16,0"/>
+
+                      <TextBlock Margin="36,24,0,0"
+                                 Classes="settingsTitle"
+                                 Text="{DynamicResource Settings.Appearance.ThemeAccent.WindowsColors}"/>
+                      <ItemsControl HorizontalAlignment="Left"
+                                    Margin="36,0,24,12"
+                                    MaxWidth="360"
+                                    ItemsSource="{Binding ThemeAccentColors}">
+                        <ItemsControl.ItemsPanel>
+                          <ItemsPanelTemplate>
+                            <WrapPanel/>
+                          </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate DataType="vm:AccentColorOptionViewModel">
+                            <Button Classes="accentColorButton"
+                                    Command="{Binding $parent[UserControl].DataContext.SelectThemeAccentColorCommand}"
+                                    CommandParameter="{Binding}">
+                              <Panel Width="42" Height="42">
+                                <Border Background="{Binding Brush}"
+                                        BorderBrush="{DynamicResource CartonControlForegroundBaseMediumLowBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="4"
+                                        Width="42"
+                                        Height="42"/>
+                                <Border Background="{DynamicResource CartonControlBackgroundChromeHighBrush}"
+                                        Width="18"
+                                        Height="18"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Top"
+                                        Margin="0,2,2,0"
+                                        IsVisible="{Binding IsSelected}">
+                                  <TextBlock Text="&#xE73E;"
+                                             FontFamily="Segoe Fluent Icons"
+                                             FontSize="12"
+                                             Foreground="{DynamicResource SystemAccentColor}"
+                                             HorizontalAlignment="Center"
+                                             VerticalAlignment="Center"/>
+                                </Border>
+                              </Panel>
+                            </Button>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+
+                      <Border Background="{DynamicResource CartonControlBackgroundBaseLowBrush}"
+                              Height="1"
+                              Margin="-16,0,-16,0"/>
+
+                      <Grid ColumnDefinitions="Auto,*"
+                            ColumnSpacing="24"
+                            Margin="36,12,0,0">
+                        <TextBlock Classes="settingsTitle"
+                                   Text="{DynamicResource Settings.Appearance.ThemeAccent.CustomColor}"
+                                   VerticalAlignment="Center"/>
+                        <ColorPicker Grid.Column="1"
+                                     Color="{Binding SelectedThemeAccentColor, Mode=TwoWay}"
+                                     HorizontalAlignment="Right"
+                                     VerticalAlignment="Center"/>
+                      </Grid>
+                    </StackPanel>
+                  </DataTemplate>
+                </ContentControl.ContentTemplate>
+              </ContentControl>
+            </ui:SettingsExpanderItem.Content>
+          </ui:SettingsExpanderItem>
+        </ui:SettingsExpander>
+        <Border Classes="settingsItem">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <TextBlock Classes="settingsTitle" Text="{DynamicResource Settings.Appearance.Language}"/>
+            <ComboBox Grid.Column="1"
+                      Classes="settingsAction"
+                      ItemsSource="{Binding Languages}"
+                      SelectedItem="{Binding SelectedLanguage}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding DisplayName}"/>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </Grid>
+        </Border>
+        <Border Classes="settingsItem">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <TextBlock Classes="settingsTitle" Text="{DynamicResource Settings.General.StartAtLogin}"/>
             <ToggleSwitch Grid.Column="1" IsChecked="{Binding StartAtLogin}"/>
           </Grid>
-          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" IsEnabled="{Binding StartAtLogin}">
-            <TextBlock Grid.Column="0" Text="{DynamicResource Settings.General.StartHiddenAtLogin}" VerticalAlignment="Center"/>
+        </Border>
+        <Border Classes="settingsItem" IsEnabled="{Binding StartAtLogin}">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <TextBlock Classes="settingsTitle" Text="{DynamicResource Settings.General.StartHiddenAtLogin}"/>
             <ToggleSwitch Grid.Column="1" IsChecked="{Binding StartHiddenAtLogin}"/>
           </Grid>
-          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-            <TextBlock Grid.Column="0" Text="{DynamicResource Settings.General.AutoStartOnLaunch}" VerticalAlignment="Center"/>
+        </Border>
+        <Border Classes="settingsItem">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <TextBlock Classes="settingsTitle" Text="{DynamicResource Settings.General.AutoStartOnLaunch}"/>
             <ToggleSwitch Grid.Column="1" IsChecked="{Binding AutoStartOnLaunch}"/>
           </Grid>
-          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-            <TextBlock Grid.Column="0" Text="{DynamicResource Settings.General.AutoDisconnectConnectionsOnNodeSwitch}" VerticalAlignment="Center"/>
+        </Border>
+        <Border Classes="settingsItem">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <TextBlock Classes="settingsTitle" Text="{DynamicResource Settings.General.AutoDisconnectConnectionsOnNodeSwitch}"/>
             <ToggleSwitch Grid.Column="1" IsChecked="{Binding AutoDisconnectConnectionsOnNodeSwitch}"/>
           </Grid>
-          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-            <StackPanel Spacing="4">
-              <TextBlock Text="{DynamicResource Settings.General.RemoteConfigProxy}" VerticalAlignment="Center"/>
-              <TextBlock Text="{DynamicResource Settings.General.RemoteConfigProxy.Description}"
-                         Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"
-                         TextWrapping="Wrap"/>
+        </Border>
+        <Border Classes="settingsItem">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <StackPanel Spacing="3">
+              <TextBlock Classes="settingsTitle" Text="{DynamicResource Settings.General.RemoteConfigProxy}"/>
+              <TextBlock Classes="settingsDescription" Text="{DynamicResource Settings.General.RemoteConfigProxy.Description}"/>
             </StackPanel>
-            <ToggleSwitch Grid.Column="1" IsChecked="{Binding UseProxyForRemoteConfigUpdates}" VerticalAlignment="Top"/>
+            <ToggleSwitch Grid.Column="1" IsChecked="{Binding UseProxyForRemoteConfigUpdates}" VerticalAlignment="Center"/>
           </Grid>
-          <Grid ColumnDefinitions="*,Auto"
-                ColumnSpacing="12"
-                IsVisible="{Binding IsWindows}">
-            <StackPanel Spacing="4">
-              <TextBlock Text="{DynamicResource Settings.General.UwpLoopback.Title}" FontWeight="Medium"/>
-              <TextBlock Text="{DynamicResource Settings.General.UwpLoopback.Description}"
-                         Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"
-                         TextWrapping="Wrap"/>
+        </Border>
+        <Border Classes="settingsItem" IsVisible="{Binding IsWindows}">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <StackPanel Spacing="3">
+              <TextBlock Classes="settingsTitle" Text="{DynamicResource Settings.General.UwpLoopback.Title}"/>
+              <TextBlock Classes="settingsDescription" Text="{DynamicResource Settings.General.UwpLoopback.Description}"/>
             </StackPanel>
             <Button Grid.Column="1"
                     Content="{DynamicResource Settings.General.UwpLoopback.Action}"
                     Command="{Binding OpenLoopbackToolCommand}"
                     IsEnabled="{Binding !IsLoopbackOperationInProgress}"
-                    VerticalAlignment="Top"/>
+                    VerticalAlignment="Center"/>
           </Grid>
-          <TextBlock Text="{Binding LoopbackStatus}"
-                     IsVisible="{Binding HasLoopbackStatus}"
-                     Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"
-                     TextWrapping="Wrap"/>
-        </StackPanel>
-      </Border>
+        </Border>
+        <TextBlock Classes="settingsDescription"
+                   Text="{Binding LoopbackStatus}"
+                   IsVisible="{Binding HasLoopbackStatus}"
+                   Margin="16,4"/>
+      </StackPanel>
 
-      <TextBlock Text="{DynamicResource Settings.Section.Update}" FontSize="18" FontWeight="SemiBold" Margin="0,8,0,0"/>
+      <TextBlock Classes="settingsSectionTitle" Text="{DynamicResource Settings.Section.Update}"/>
 
-      <Border Classes="card" Padding="16">
-        <StackPanel Spacing="12">
-          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
-            <TextBlock Grid.Column="0" Text="{DynamicResource Settings.Update.Channel}" VerticalAlignment="Center"/>
+      <StackPanel Spacing="6">
+        <Border Classes="settingsItem">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <TextBlock Classes="settingsTitle" Text="{DynamicResource Settings.Update.Channel}"/>
             <ComboBox Grid.Column="1"
+                      Classes="settingsAction"
                       ItemsSource="{Binding UpdateChannels}"
                       SelectedValue="{Binding SelectedUpdateChannel}"
-                      SelectedValueBinding="{Binding Channel}"
-                      HorizontalAlignment="Left"
-                      MinWidth="150">
+                      SelectedValueBinding="{Binding Channel}">
               <ComboBox.ItemTemplate>
                 <DataTemplate>
                   <TextBlock Text="{Binding DisplayName}"/>
@@ -186,145 +428,147 @@
               </ComboBox.ItemTemplate>
             </ComboBox>
           </Grid>
-
-          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-            <TextBlock Grid.Column="0" Text="{DynamicResource Settings.Update.AutoCheck}" VerticalAlignment="Center"/>
+        </Border>
+        <Border Classes="settingsItem">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <TextBlock Classes="settingsTitle" Text="{DynamicResource Settings.Update.AutoCheck}"/>
             <ToggleSwitch Grid.Column="1" IsChecked="{Binding AutoCheckAppUpdates}"/>
           </Grid>
-
-          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
-            <TextBlock Grid.Column="0" Text="{DynamicResource Settings.Update.CurrentVersion}" VerticalAlignment="Center"/>
-            <TextBlock Grid.Column="1" Text="{Binding AppUpdate.CurrentAppVersion}" FontWeight="Medium"/>
+        </Border>
+        <Border Classes="settingsItem">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <StackPanel Spacing="3" VerticalAlignment="Center">
+              <TextBlock Classes="settingsTitle" Text="{DynamicResource Settings.Update.CurrentVersion}"/>
+              <TextBlock Classes="settingsDescription" Text="{Binding AppUpdate.CurrentAppVersion}"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1"
+                        Orientation="Horizontal"
+                        Spacing="8"
+                        VerticalAlignment="Center">
+              <StackPanel Spacing="3" MinWidth="92">
+                <TextBlock Classes="settingsTitle"
+                           Text="{DynamicResource Settings.Update.LatestVersion}"
+                           HorizontalAlignment="Right"/>
+                <TextBlock Classes="settingsDescription"
+                           Text="{Binding AppUpdate.LatestAvailableVersionDisplay}"
+                           HorizontalAlignment="Right"/>
+              </StackPanel>
+              <Button Content="{DynamicResource Settings.Update.Check}"
+                      Command="{Binding AppUpdate.CheckAppUpdateCommand}"
+                      IsEnabled="{Binding !AppUpdate.IsCheckingAppUpdate}"/>
+              <Button Content="{DynamicResource Settings.Update.Download}"
+                      Command="{Binding AppUpdate.DownloadAppUpdateCommand}"
+                      IsEnabled="{Binding AppUpdate.IsAppUpdateAvailable}"
+                      IsVisible="{Binding AppUpdate.IsAppUpdateAvailable}"/>
+              <Button Content="{DynamicResource Settings.Update.Apply}"
+                      Command="{Binding AppUpdate.ApplyAppUpdateCommand}"
+                      Classes="accent"
+                      IsEnabled="{Binding AppUpdate.IsAppUpdateReadyToInstall}"
+                      IsVisible="{Binding AppUpdate.IsAppUpdateReadyToInstall}"/>
+            </StackPanel>
           </Grid>
+        </Border>
+        <Border Classes="settingsItem" IsVisible="{Binding AppUpdate.IsCheckingAppUpdate}">
+          <ProgressBar Maximum="100" Height="4" IsIndeterminate="True"/>
+        </Border>
+        <Border Classes="settingsItem" IsVisible="{Binding AppUpdate.IsDownloadingAppUpdate}">
+          <ProgressBar Value="{Binding AppUpdate.AppUpdateProgress}" Maximum="100" Height="4"/>
+        </Border>
+        <TextBlock Classes="settingsDescription"
+                   Text="{Binding AppUpdate.AppUpdateStatus}"
+                   IsVisible="{Binding AppUpdate.ShouldShowAppUpdateStatus}"
+                   Margin="16,4"/>
+      </StackPanel>
 
-          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
-            <TextBlock Grid.Column="0" Text="{DynamicResource Settings.Update.LatestVersion}" VerticalAlignment="Center"/>
-            <TextBlock Grid.Column="1" Text="{Binding AppUpdate.LatestAvailableVersion}" FontWeight="Medium"/>
+      <TextBlock Classes="settingsSectionTitle" Text="{DynamicResource Settings.Section.Data}"/>
+
+      <StackPanel Spacing="6">
+        <Border Classes="settingsItem" IsVisible="{Binding ShowPortableDataOption}">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <TextBlock Classes="settingsTitle" Text="{DynamicResource Settings.Data.StoreInAppDir}"/>
+            <ToggleSwitch Grid.Column="1" IsChecked="{Binding IsDataInExeDirectory}"/>
           </Grid>
+        </Border>
 
-          <ProgressBar Maximum="100"
-                       Height="4"
-                       IsIndeterminate="True"
-                       IsVisible="{Binding AppUpdate.IsCheckingAppUpdate}"/>
+        <ui:SettingsExpander Header="{DynamicResource Settings.Data.Directory}"
+                             IsExpanded="False">
+          <ui:SettingsExpander.IconSource>
+            <ui:FontIconSource FontFamily="Segoe Fluent Icons" Glyph="&#xE7F1;" />
+          </ui:SettingsExpander.IconSource>
 
-          <ProgressBar Value="{Binding AppUpdate.AppUpdateProgress}"
-                       Maximum="100"
-                       Height="4"
-                       IsVisible="{Binding AppUpdate.IsDownloadingAppUpdate}"/>
+          <ui:SettingsExpanderItem ActionIconSource="Open"
+                                   Command="{Binding OpenDataFolderCommand}"
+                                   IsClickEnabled="True"
+                                   ToolTip.Tip="{DynamicResource Settings.Data.OpenFolder}">
+            <ui:SettingsExpanderItem.Content>
+              <StackPanel Spacing="3">
+                <TextBlock Classes="settingsTitle" Text="{DynamicResource Settings.Data.OpenFolder}"/>
+                <TextBlock Classes="settingsDescription"
+                           Text="{Binding DataDirectoryPath}"
+                           TextTrimming="CharacterEllipsis"
+                           MaxLines="1"/>
+              </StackPanel>
+            </ui:SettingsExpanderItem.Content>
+          </ui:SettingsExpanderItem>
 
-          <TextBlock Text="{Binding AppUpdate.AppUpdateStatus}"
-                     Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"
-                     TextWrapping="Wrap"/>
+          <ui:SettingsExpanderItem Content="{DynamicResource Settings.Data.Cleanup}"
+                                   IsClickEnabled="False">
+            <ui:SettingsExpanderItem.Footer>
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="{DynamicResource Settings.Data.ClearAll}"
+                        Command="{Binding ClearAllDataCommand}"
+                        IsEnabled="{Binding !IsDataOperationInProgress}"/>
+                <Button Content="{DynamicResource Settings.Data.ClearLogs}"
+                        Command="{Binding ClearLogsCommand}"/>
+                <Button Content="{DynamicResource Settings.Data.ClearCache}"
+                        Command="{Binding ClearCacheCommand}"/>
+              </StackPanel>
+            </ui:SettingsExpanderItem.Footer>
+          </ui:SettingsExpanderItem>
+        </ui:SettingsExpander>
+        <TextBlock Classes="settingsDescription"
+                   Text="{Binding DataOperationStatus}"
+                   IsVisible="{Binding HasDataOperationStatus}"
+                   Margin="16,4"
+                   TextWrapping="Wrap"/>
 
+        <Border Classes="settingsItem">
           <StackPanel Orientation="Horizontal" Spacing="8">
-            <Button Content="{DynamicResource Settings.Update.Check}"
-                    Command="{Binding AppUpdate.CheckAppUpdateCommand}"
-                    IsEnabled="{Binding !AppUpdate.IsCheckingAppUpdate}"/>
-            <Button Content="{DynamicResource Settings.Update.Download}"
-                    Command="{Binding AppUpdate.DownloadAppUpdateCommand}"
-                    IsEnabled="{Binding AppUpdate.IsAppUpdateAvailable}"
-                    IsVisible="{Binding AppUpdate.IsAppUpdateAvailable}"/>
-            <Button Content="{DynamicResource Settings.Update.Apply}"
-                    Command="{Binding AppUpdate.ApplyAppUpdateCommand}"
-                    Classes="accent"
-                    IsEnabled="{Binding AppUpdate.IsAppUpdateReadyToInstall}"
-                    IsVisible="{Binding AppUpdate.IsAppUpdateReadyToInstall}"/>
+            <Button Content="{DynamicResource Settings.Data.Backup.Export}"
+                    Command="{Binding ExportBackupCommand}"
+                    IsEnabled="{Binding !IsDataOperationInProgress}"/>
+            <Button Content="{DynamicResource Settings.Data.Backup.Import}"
+                    Command="{Binding ImportBackupCommand}"
+                    IsEnabled="{Binding !IsDataOperationInProgress}"/>
+            <Button Content="{DynamicResource Settings.Data.Reset}"
+                    Command="{Binding ResetSettingsCommand}"/>
           </StackPanel>
-        </StackPanel>
-      </Border>
+        </Border>
+      </StackPanel>
 
-      <TextBlock Text="{DynamicResource Settings.Section.Appearance}" FontSize="18" FontWeight="SemiBold" Margin="0,8,0,0"/>
+      <TextBlock Classes="settingsSectionTitle" Text="{DynamicResource Settings.Section.About}"/>
 
-      <Border Classes="card" Padding="16">
-        <StackPanel Spacing="12">
-          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
-            <TextBlock Grid.Column="0" Text="{DynamicResource Settings.Appearance.Theme}" VerticalAlignment="Center"/>
-            <ComboBox Grid.Column="1"
-                      ItemsSource="{Binding Themes}"
-                      SelectedValue="{Binding SelectedTheme}"
-                      SelectedValueBinding="{Binding Theme}"
-                      HorizontalAlignment="Left"
-                      MinWidth="150">
-              <ComboBox.ItemTemplate>
-                <DataTemplate>
-                  <TextBlock Text="{Binding DisplayName}"/>
-                </DataTemplate>
-              </ComboBox.ItemTemplate>
-            </ComboBox>
-          </Grid>
-          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
-            <TextBlock Grid.Column="0" Text="{DynamicResource Settings.Appearance.Language}" VerticalAlignment="Center"/>
-            <ComboBox Grid.Column="1"
-                      ItemsSource="{Binding Languages}"
-                      SelectedItem="{Binding SelectedLanguage}"
-                      HorizontalAlignment="Left"
-                      MinWidth="150">
-              <ComboBox.ItemTemplate>
-                <DataTemplate>
-                  <TextBlock Text="{Binding DisplayName}"/>
-                </DataTemplate>
-              </ComboBox.ItemTemplate>
-            </ComboBox>
-          </Grid>
-        </StackPanel>
-      </Border>
-
-      <TextBlock Text="{DynamicResource Settings.Section.Data}" FontSize="18" FontWeight="SemiBold" Margin="0,8,0,0"/>
-
-      <Border Classes="card" Padding="16">
-        <StackPanel Spacing="12">
-          <Grid ColumnDefinitions="*,Auto"
-                ColumnSpacing="12"
-                IsVisible="{Binding ShowPortableDataOption}">
-            <TextBlock Grid.Column="0" Text="{DynamicResource Settings.Data.StoreInAppDir}" VerticalAlignment="Center"/>
-            <ToggleSwitch Grid.Column="1" IsChecked="{Binding IsDataInExeDirectory}" />
-          </Grid>
-          <Button Content="{DynamicResource Settings.Data.OpenFolder}" Command="{Binding OpenDataFolderCommand}"
-                  HorizontalAlignment="Left"/>
-          <Button Content="{DynamicResource Settings.Data.ClearAll}"
-                  Command="{Binding ClearAllDataCommand}"
-                  IsEnabled="{Binding !IsDataOperationInProgress}"
-                  HorizontalAlignment="Left"/>
-          <Button Content="{DynamicResource Settings.Data.Backup.Export}" Command="{Binding ExportBackupCommand}"
-                  IsEnabled="{Binding !IsDataOperationInProgress}"
-                  HorizontalAlignment="Left"/>
-          <Button Content="{DynamicResource Settings.Data.Backup.Import}" Command="{Binding ImportBackupCommand}"
-                  IsEnabled="{Binding !IsDataOperationInProgress}"
-                  HorizontalAlignment="Left"/>
-          <Button Content="{DynamicResource Settings.Data.ClearLogs}" Command="{Binding ClearLogsCommand}"
-                  HorizontalAlignment="Left"/>
-          <Button Content="{DynamicResource Settings.Data.ClearCache}" Command="{Binding ClearCacheCommand}"
-                  HorizontalAlignment="Left"/>
-          <Button Content="{DynamicResource Settings.Data.Reset}" Command="{Binding ResetSettingsCommand}"
-                  HorizontalAlignment="Left"/>
-          <TextBlock Text="{Binding DataOperationStatus}"
-                     Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"
-                     TextWrapping="Wrap"/>
-        </StackPanel>
-      </Border>
-
-      <TextBlock Text="{DynamicResource Settings.Section.About}" FontSize="18" FontWeight="SemiBold" Margin="0,8,0,0"/>
-
-      <Border Classes="card" Padding="16">
-        <StackPanel Spacing="8">
-          <TextBlock Text="{DynamicResource Settings.About.Name}" FontSize="16" FontWeight="SemiBold"/>
-          <TextBlock Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}">
-            <TextBlock.Inlines>
-              <Run Text="{DynamicResource Settings.About.Version}"/>
-              <Run Text=": "/>
-              <Run Text="{Binding AppUpdate.CurrentAppVersion}"/>
-            </TextBlock.Inlines>
-          </TextBlock>
-          <TextBlock Text="{DynamicResource Settings.About.Description}" 
-                     Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
-          <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
-            <Button Content="{DynamicResource Settings.About.CartonHomepage}"
-                    Command="{Binding OpenCartonHomepageCommand}"/>
-            <Button Content="{DynamicResource Settings.About.SingBoxHomepage}"
-                    Command="{Binding OpenSingBoxHomepageCommand}"/>
+      <StackPanel Spacing="6" Margin="0,0,0,12">
+        <Border Classes="settingsItem">
+          <StackPanel Spacing="6">
+            <TextBlock Text="{DynamicResource Settings.About.Name}" FontSize="16" FontWeight="SemiBold"/>
+            <TextBlock Classes="settingsDescription">
+              <TextBlock.Inlines>
+                <Run Text="{DynamicResource Settings.About.Version}"/>
+                <Run Text=": "/>
+                <Run Text="{Binding AppUpdate.CurrentAppVersion}"/>
+              </TextBlock.Inlines>
+            </TextBlock>
+            <TextBlock Classes="settingsDescription" Text="{DynamicResource Settings.About.Description}"/>
+            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+              <Button Content="{DynamicResource Settings.About.CartonHomepage}"
+                      Command="{Binding OpenCartonHomepageCommand}"/>
+              <Button Content="{DynamicResource Settings.About.SingBoxHomepage}"
+                      Command="{Binding OpenSingBoxHomepageCommand}"/>
+            </StackPanel>
           </StackPanel>
-        </StackPanel>
-      </Border>
+        </Border>
+      </StackPanel>
     </StackPanel>
   </ScrollViewer>
 

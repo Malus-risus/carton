@@ -11,6 +11,9 @@
           <SolidColorBrush x:Key="CartonControlBackgroundChromeMediumBrush" Color="#FFF3F3F3" />
           <SolidColorBrush x:Key="CartonControlBackgroundChromeMediumLowBrush" Color="#FFF8F8F8" />
           <SolidColorBrush x:Key="CartonControlBackgroundChromeHighBrush" Color="#FFFFFFFF" />
+          <SolidColorBrush x:Key="CartonSettingsItemBackgroundBrush" Color="#FFFFFFFF" />
+          <SolidColorBrush x:Key="CartonSettingsItemPointerOverBackgroundBrush" Color="#FFF9F9F9" />
+          <SolidColorBrush x:Key="CartonSettingsItemBorderBrush" Color="#14000000" />
           <SolidColorBrush x:Key="CartonControlBackgroundBaseLowBrush" Color="#10000000" />
           <SolidColorBrush x:Key="CartonControlBackgroundAltHighBrush" Color="#FFFFFFFF" />
           <SolidColorBrush x:Key="CartonControlBackgroundAltMediumHighBrush" Color="#FFF7F7F7" />
@@ -24,6 +27,9 @@
           <SolidColorBrush x:Key="CartonControlBackgroundChromeMediumBrush" Color="#FF2B2B2B" />
           <SolidColorBrush x:Key="CartonControlBackgroundChromeMediumLowBrush" Color="#FF242424" />
           <SolidColorBrush x:Key="CartonControlBackgroundChromeHighBrush" Color="#FF1F1F1F" />
+          <SolidColorBrush x:Key="CartonSettingsItemBackgroundBrush" Color="#FF2B2B2B" />
+          <SolidColorBrush x:Key="CartonSettingsItemPointerOverBackgroundBrush" Color="#FF323232" />
+          <SolidColorBrush x:Key="CartonSettingsItemBorderBrush" Color="#18FFFFFF" />
           <SolidColorBrush x:Key="CartonControlBackgroundBaseLowBrush" Color="#26FFFFFF" />
           <SolidColorBrush x:Key="CartonControlBackgroundAltHighBrush" Color="#FF1E1E1E" />
           <SolidColorBrush x:Key="CartonControlBackgroundAltMediumHighBrush" Color="#FF2A2A2A" />

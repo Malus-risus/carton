@@ -78,9 +78,10 @@ public class PreferencesService : IPreferencesService
         try
         {
             var json = File.ReadAllText(_preferencesPath);
-            return JsonSerializer.Deserialize(
-                       json,
-                       CartonCoreJsonContext.Default.AppPreferences) ?? CreateAndPersistDefaults();
+            var preferences = JsonSerializer.Deserialize(
+                                  json,
+                                  CartonCoreJsonContext.Default.AppPreferences) ?? CreateAndPersistDefaults();
+            return preferences;
         }
         catch (JsonException)
         {

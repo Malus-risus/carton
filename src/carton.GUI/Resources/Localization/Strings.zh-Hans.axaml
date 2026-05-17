@@ -248,17 +248,29 @@
 	<x:String x:Key="Settings.Appearance.Theme.System">跟随系统</x:String>
 	<x:String x:Key="Settings.Appearance.Theme.Light">亮色</x:String>
 	<x:String x:Key="Settings.Appearance.Theme.Dark">暗色</x:String>
+	<x:String x:Key="Settings.Appearance.ThemeAccent">主题颜色</x:String>
+	<x:String x:Key="Settings.Appearance.ThemeAccent.Description">选择控件高亮、开关和选中状态使用的强调色。</x:String>
+	<x:String x:Key="Settings.Appearance.ThemeAccent.SystemDefault">系统默认</x:String>
+	<x:String x:Key="Settings.Appearance.ThemeAccent.Custom">自定义</x:String>
+	<x:String x:Key="Settings.Appearance.ThemeAccent.PreviewColor">预览颜色</x:String>
+	<x:String x:Key="Settings.Appearance.ThemeAccent.WindowsColors">Windows 预设颜色</x:String>
+	<x:String x:Key="Settings.Appearance.ThemeAccent.CustomColor">自定义颜色</x:String>
+	<x:String x:Key="Settings.Appearance.ThemeAccent.Source.WindowsPreset">当前：Windows 预设颜色</x:String>
+	<x:String x:Key="Settings.Appearance.ThemeAccent.Source.Custom">当前：自定义颜色</x:String>
 	<x:String x:Key="Settings.Appearance.Language">语言</x:String>
 
 	<x:String x:Key="Settings.Section.Data">数据</x:String>
-	<x:String x:Key="Settings.Data.StoreInAppDir">将数据存储在应用目录中 (.exe所在目录)</x:String>
+	<x:String x:Key="Settings.Data.StoreInAppDir">便携数据模式</x:String>
 	<x:String x:Key="Settings.Data.StoreInAppDir.ConfirmTitle">确认更改数据位置</x:String>
 	<x:String x:Key="Settings.Data.StoreInAppDir.ConfirmMessageEnable">确认要将数据存储在应用目录吗？这需要重启应用，并且您现有的配置将被复制过去。</x:String>
 	<x:String x:Key="Settings.Data.StoreInAppDir.ConfirmMessageDisable">确认要停止在应用目录存储数据（恢复到 AppData）吗？这需要重启应用，并且配置将被复制回去。</x:String>
 	<x:String x:Key="Settings.Data.StoreInAppDir.ConfirmButton">确认</x:String>
 	<x:String x:Key="Settings.Data.StoreInAppDir.CancelButton">取消</x:String>
 	<x:String x:Key="Settings.Data.StoreInAppDir.Failed">更改数据目录失败</x:String>
+	<x:String x:Key="Settings.Data.StorageSpace">存储空间</x:String>
+	<x:String x:Key="Settings.Data.Directory">数据目录</x:String>
 	<x:String x:Key="Settings.Data.OpenFolder">打开数据目录</x:String>
+	<x:String x:Key="Settings.Data.Cleanup">清理</x:String>
 	<x:String x:Key="Settings.Data.ClearAll">清除全部数据</x:String>
 	<x:String x:Key="Settings.Data.Backup.Export">导出备份</x:String>
 	<x:String x:Key="Settings.Data.Backup.Import">导入备份</x:String>
@@ -292,6 +304,10 @@
 	<x:String x:Key="Settings.Data.ClearAll.Restart.Message">数据已经清除，应用需要重启以重新创建默认数据。</x:String>
 	<x:String x:Key="Settings.Data.ClearAll.PortableNotSupported">便携模式将数据存储在应用目录中，请关闭应用后手动清理。</x:String>
 	<x:String x:Key="Settings.Data.Reset">重置设置</x:String>
+	<x:String x:Key="Settings.Data.Reset.ConfirmTitle">重置设置</x:String>
+	<x:String x:Key="Settings.Data.Reset.ConfirmMessage">确定要将所有设置恢复为默认值吗？此操作无法撤销。</x:String>
+	<x:String x:Key="Settings.Data.Reset.ConfirmButton">重置</x:String>
+	<x:String x:Key="Settings.Data.Reset.Success">设置已重置</x:String>
 
 	<x:String x:Key="Settings.Section.About">关于</x:String>
 	<x:String x:Key="Settings.About.Name">Carton</x:String>

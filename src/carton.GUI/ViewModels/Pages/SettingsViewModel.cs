@@ -30,6 +30,28 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
 #endif
 
     private const string WindowsNaiveProxyRuntimeDll = "libcronet.dll";
+    private static readonly Color[] PredefinedAccentColors =
+    [
+        Color.FromRgb(255, 185, 0),
+        Color.FromRgb(255, 140, 0),
+        Color.FromRgb(218, 59, 1),
+        Color.FromRgb(209, 52, 56),
+        Color.FromRgb(232, 17, 35),
+        Color.FromRgb(234, 0, 94),
+        Color.FromRgb(227, 0, 140),
+        Color.FromRgb(194, 57, 179),
+        Color.FromRgb(0, 120, 212),
+        Color.FromRgb(0, 99, 177),
+        Color.FromRgb(142, 140, 216),
+        Color.FromRgb(135, 100, 184),
+        Color.FromRgb(0, 153, 188),
+        Color.FromRgb(0, 183, 195),
+        Color.FromRgb(0, 178, 148),
+        Color.FromRgb(0, 204, 106),
+        Color.FromRgb(16, 137, 62),
+        Color.FromRgb(118, 118, 118),
+        Color.FromRgb(104, 118, 138)
+    ];
     private readonly Action<string, int>? _toastWriter;
     private readonly IConfigManager? _configManager;
     private readonly IProfileManager? _profileManager;
@@ -43,6 +65,7 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
     private AppPreferences _currentPreferences = new();
     private KernelPackageDownloadResult? _pendingKernelPackage;
     private bool _suppressPreferenceUpdates;
+    private bool _syncingThemeAccentColor;
 
     public override NavigationPage PageType => NavigationPage.Settings;
 
@@ -66,6 +89,24 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
 
     [ObservableProperty]
     private AppTheme _selectedTheme = AppTheme.System;
+
+    [ObservableProperty]
+    private bool _useSystemThemeAccent;
+
+    [ObservableProperty]
+    private bool _isThemeAccentExpanded;
+
+    [ObservableProperty]
+    private bool _hasLoadedThemeAccentContent;
+
+    [ObservableProperty]
+    private string _selectedThemeAccent = "#FF0078D7";
+
+    [ObservableProperty]
+    private Color _selectedThemeAccentColor = Color.Parse("#FF0078D7");
+
+    [ObservableProperty]
+    private AccentColorOptionViewModel? _selectedThemeAccentColorOption;
 
     [ObservableProperty]
     private string _selectedUpdateChannel = "release";
@@ -100,6 +141,12 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
     partial void OnAutoStartOnLaunchChanged(bool value) => UpdatePreference(p => p.AutoStartOnLaunch = value);
     partial void OnAutoDisconnectConnectionsOnNodeSwitchChanged(bool value) => UpdatePreference(p => p.AutoDisconnectConnectionsOnNodeSwitch = value);
     partial void OnSelectedThemeChanged(AppTheme value) => OnThemeChanged(value);
+    partial void OnUseSystemThemeAccentChanged(bool value) => OnThemeAccentModeChanged(value);
+    partial void OnIsThemeAccentExpandedChanged(bool value) => OnThemeAccentExpandedChanged(value);
+    partial void OnHasLoadedThemeAccentContentChanged(bool value) => OnPropertyChanged(nameof(ThemeAccentContent));
+    partial void OnSelectedThemeAccentChanged(string value) => OnThemeAccentChanged(value);
+    partial void OnSelectedThemeAccentColorChanged(Color value) => OnThemeAccentColorChanged(value);
+    partial void OnSelectedThemeAccentColorOptionChanged(AccentColorOptionViewModel? value) => OnThemeAccentOptionChanged(value);
     partial void OnSelectedLanguageChanged(LanguageOptionViewModel? value) => OnLanguageOptionChanged(value);
     partial void OnSelectedUpdateChannelChanged(string value) => OnUpdateChannelChanged(value);
     partial void OnAutoCheckAppUpdatesChanged(bool value) => UpdatePreference(p => p.AutoCheckAppUpdates = value);
@@ -125,6 +172,8 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
     [ObservableProperty]
     private string _kernelPath = string.Empty;
 
+    partial void OnKernelPathChanged(string value) => OpenKernelFolderCommand.NotifyCanExecuteChanged();
+
     [ObservableProperty]
     private bool _isKernelInstalled;
 
@@ -137,7 +186,11 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
         OnPropertyChanged(nameof(CanUninstallKernel));
     }
 
-    partial void OnIsKernelInstalledChanged(bool value) => OnPropertyChanged(nameof(CanUninstallKernel));
+    partial void OnIsKernelInstalledChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanUninstallKernel));
+        OpenKernelFolderCommand.NotifyCanExecuteChanged();
+    }
 
     [ObservableProperty]
     private bool _isBuiltinKernel;
@@ -173,6 +226,8 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
     [ObservableProperty]
     private string _dataOperationStatus = string.Empty;
 
+    partial void OnDataOperationStatusChanged(string value) => OnPropertyChanged(nameof(HasDataOperationStatus));
+
     [ObservableProperty]
     private bool _isDataInExeDirectory;
 
@@ -187,6 +242,7 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
     }
 
     public ObservableCollection<ThemeOptionViewModel> Themes { get; } = new();
+    public ObservableCollection<AccentColorOptionViewModel> ThemeAccentColors { get; } = new();
     public ObservableCollection<DownloadMirror> KernelDownloadMirrors { get; } = new(
     [
         DownloadMirror.GitHub,
@@ -201,9 +257,18 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
     public ObservableCollection<UpdateChannelOptionViewModel> UpdateChannels { get; } = new();
     public bool IsWindows => RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
     public bool HasLoopbackStatus => !string.IsNullOrWhiteSpace(LoopbackStatus);
+    public bool HasDataOperationStatus => !string.IsNullOrWhiteSpace(DataOperationStatus);
     public bool CanCheckKernelUpdate => !IsUpdatingKernel && !IsCheckingKernelUpdate;
     public bool CanUninstallKernel => IsKernelInstalled && !IsUpdatingKernel && !IsBuiltinKernel;
+    public bool CanOpenKernelFolder => TryResolveKernelDirectory(out _);
+    public string DataDirectoryPath => Path.Combine(carton.Core.Utilities.PathHelper.GetAppDataPath(), "data");
     public AppUpdateCoordinator AppUpdate => _appUpdate;
+    public bool UseCustomThemeAccent => !UseSystemThemeAccent;
+
+    public SettingsViewModel? ThemeAccentContent => HasLoadedThemeAccentContent ? this : null;
+    public string ThemeAccentSourceDisplay => SelectedThemeAccentColorOption == null
+        ? GetString("Settings.Appearance.ThemeAccent.Source.Custom", "Current: custom color")
+        : GetString("Settings.Appearance.ThemeAccent.Source.WindowsPreset", "Current: Windows preset color");
 
     public SettingsViewModel()
     {
@@ -262,6 +327,23 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
         Themes.Add(new ThemeOptionViewModel(AppTheme.System, GetThemeDisplayName(AppTheme.System)));
         Themes.Add(new ThemeOptionViewModel(AppTheme.Light, GetThemeDisplayName(AppTheme.Light)));
         Themes.Add(new ThemeOptionViewModel(AppTheme.Dark, GetThemeDisplayName(AppTheme.Dark)));
+    }
+
+    private void InitializeThemeAccentColors()
+    {
+        if (ThemeAccentColors.Count > 0)
+        {
+            SelectThemeAccentOption(SelectedThemeAccent);
+            return;
+        }
+
+        ThemeAccentColors.Clear();
+        foreach (var color in PredefinedAccentColors)
+        {
+            ThemeAccentColors.Add(new AccentColorOptionViewModel(color));
+        }
+
+        SelectThemeAccentOption(SelectedThemeAccent);
     }
 
     private void RefreshThemeDisplayNames()
@@ -329,11 +411,13 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
 
         RefreshThemeDisplayNames();
         RefreshUpdateChannelDisplayNames();
+        OnPropertyChanged(nameof(ThemeAccentSourceDisplay));
     }
 
     private void OnLanguageChanged(object? sender, AppLanguage language)
     {
         UpdateLocalizedTexts();
+        _appUpdate.RefreshLocalizedTexts();
     }
 
     public void Dispose()
@@ -368,6 +452,11 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
         AutoStartOnLaunch = _currentPreferences.AutoStartOnLaunch;
         AutoDisconnectConnectionsOnNodeSwitch = _currentPreferences.AutoDisconnectConnectionsOnNodeSwitch;
         SelectedTheme = _currentPreferences.Theme;
+        UseSystemThemeAccent = _currentPreferences.UseSystemThemeAccent;
+        IsThemeAccentExpanded = false;
+        HasLoadedThemeAccentContent = false;
+        SelectedThemeAccent = NormalizeThemeAccent(_currentPreferences.ThemeAccent);
+        SelectedThemeAccentColor = Color.Parse(SelectedThemeAccent);
         SelectedLanguage = Languages.FirstOrDefault(l => l.Language == _currentPreferences.Language) ?? Languages.FirstOrDefault();
         SelectedUpdateChannel = UpdateChannelToString(_currentPreferences.UpdateChannel);
         AutoCheckAppUpdates = _currentPreferences.AutoCheckAppUpdates;
@@ -378,6 +467,7 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
         _suppressPreferenceUpdates = false;
         _appUpdate.Configure(SelectedUpdateChannel);
         _localizationService?.SetLanguage(_currentPreferences.Language);
+        _themeService?.ApplyAccent(UseSystemThemeAccent, SelectedThemeAccent);
         _startupService?.ApplyStartAtLoginPreference(StartAtLogin, StartHiddenAtLogin);
     }
 
@@ -889,6 +979,47 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
         }
     }
 
+    [RelayCommand(CanExecute = nameof(CanOpenKernelFolder))]
+    private void OpenKernelFolder()
+    {
+        if (!TryResolveKernelDirectory(out var kernelDirectory))
+        {
+            return;
+        }
+
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = kernelDirectory,
+            UseShellExecute = true,
+            Verb = "open"
+        });
+    }
+
+    private bool TryResolveKernelDirectory(out string kernelDirectory)
+    {
+        kernelDirectory = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(KernelPath))
+        {
+            return false;
+        }
+
+        if (Directory.Exists(KernelPath))
+        {
+            kernelDirectory = KernelPath;
+            return true;
+        }
+
+        var directory = Path.GetDirectoryName(KernelPath);
+        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+        {
+            return false;
+        }
+
+        kernelDirectory = directory;
+        return true;
+    }
+
     [RelayCommand]
     private async Task ClearAllData()
     {
@@ -1071,14 +1202,36 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
     }
 
     [RelayCommand]
-    private Task ResetSettings()
+    private async Task ResetSettings()
     {
+        var desktop = Avalonia.Application.Current?.ApplicationLifetime as Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime;
+        var window = desktop?.MainWindow;
+        if (window == null)
+        {
+            DataOperationStatus = GetString("Settings.Data.Operation.WindowUnavailable", "Main window unavailable");
+            return;
+        }
+
+        var shouldReset = await ShowResetSettingsDialogAsync(window);
+        if (!shouldReset)
+        {
+            return;
+        }
+
         _currentPreferences = new AppPreferences();
         _suppressPreferenceUpdates = true;
         StartAtLogin = _currentPreferences.StartAtLogin;
+        StartHiddenAtLogin = _currentPreferences.StartHiddenAtLogin;
         AutoStartOnLaunch = _currentPreferences.AutoStartOnLaunch;
         AutoDisconnectConnectionsOnNodeSwitch = _currentPreferences.AutoDisconnectConnectionsOnNodeSwitch;
         SelectedTheme = _currentPreferences.Theme;
+        UseSystemThemeAccent = _currentPreferences.UseSystemThemeAccent;
+        IsThemeAccentExpanded = false;
+        HasLoadedThemeAccentContent = false;
+        ThemeAccentColors.Clear();
+        SelectedThemeAccentColorOption = null;
+        SelectedThemeAccent = NormalizeThemeAccent(_currentPreferences.ThemeAccent);
+        SelectedThemeAccentColor = Color.Parse(SelectedThemeAccent);
         SelectedLanguage = Languages.FirstOrDefault(l => l.Language == _currentPreferences.Language) ?? Languages.FirstOrDefault();
         SelectedUpdateChannel = UpdateChannelToString(_currentPreferences.UpdateChannel);
         AutoCheckAppUpdates = _currentPreferences.AutoCheckAppUpdates;
@@ -1087,8 +1240,9 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
         SelectedKernelDownloadMirror = _currentPreferences.KernelDownloadMirror;
         _suppressPreferenceUpdates = false;
         _localizationService?.SetLanguage(_currentPreferences.Language);
+        _themeService?.ApplyAccent(UseSystemThemeAccent, SelectedThemeAccent);
         PersistPreferences();
-        return Task.CompletedTask;
+        DataOperationStatus = GetString("Settings.Data.Reset.Success", "Settings reset");
     }
 
     [RelayCommand]
@@ -1185,6 +1339,160 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
         }
 
         UpdatePreference(p => p.Theme = appliedTheme);
+    }
+
+    private void OnThemeAccentModeChanged(bool useSystemThemeAccent)
+    {
+        OnPropertyChanged(nameof(UseCustomThemeAccent));
+        _themeService?.ApplyAccent(useSystemThemeAccent, SelectedThemeAccent);
+        UpdatePreference(p =>
+        {
+            p.UseSystemThemeAccent = useSystemThemeAccent;
+            p.ThemeAccent = NormalizeThemeAccent(SelectedThemeAccent);
+        });
+    }
+
+    public void SetThemeAccentMode(bool useSystemAccent)
+    {
+        if (UseSystemThemeAccent == useSystemAccent)
+        {
+            return;
+        }
+
+        UseSystemThemeAccent = useSystemAccent;
+    }
+
+    private void OnThemeAccentChanged(string value)
+    {
+        if (!TryNormalizeThemeAccent(value, out var normalized))
+        {
+            return;
+        }
+
+        SelectThemeAccentOption(normalized);
+        var color = Color.Parse(normalized);
+        if (SelectedThemeAccentColor != color)
+        {
+            _syncingThemeAccentColor = true;
+            try
+            {
+                SelectedThemeAccentColor = color;
+            }
+            finally
+            {
+                _syncingThemeAccentColor = false;
+            }
+        }
+
+        _themeService?.ApplyAccent(UseSystemThemeAccent, normalized);
+        UpdatePreference(p =>
+        {
+            p.ThemeAccent = normalized;
+        });
+    }
+
+    private void OnThemeAccentOptionChanged(AccentColorOptionViewModel? value)
+    {
+        if (value == null || string.Equals(SelectedThemeAccent, value.ColorHex, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        SelectedThemeAccent = value.ColorHex;
+    }
+
+    private void OnThemeAccentColorChanged(Color value)
+    {
+        if (_syncingThemeAccentColor)
+        {
+            return;
+        }
+
+        var colorHex = FormatColor(value);
+        if (string.Equals(SelectedThemeAccent, colorHex, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        SwitchToCustomThemeAccentMode();
+        SelectedThemeAccent = colorHex;
+    }
+
+    [RelayCommand]
+    private void SelectThemeAccentColor(AccentColorOptionViewModel? option)
+    {
+        if (option == null)
+        {
+            return;
+        }
+
+        SwitchToCustomThemeAccentMode();
+        SelectedThemeAccent = option.ColorHex;
+    }
+
+    private void SwitchToCustomThemeAccentMode()
+    {
+        if (!_suppressPreferenceUpdates && UseSystemThemeAccent)
+        {
+            UseSystemThemeAccent = false;
+        }
+    }
+
+    private void SelectThemeAccentOption(string accent)
+    {
+        if (!TryNormalizeThemeAccent(accent, out var normalized))
+        {
+            SelectedThemeAccentColorOption = null;
+            foreach (var option in ThemeAccentColors)
+            {
+                option.IsSelected = false;
+            }
+
+            return;
+        }
+
+        var matchingOption = ThemeAccentColors.FirstOrDefault(
+            option => string.Equals(option.ColorHex, normalized, StringComparison.OrdinalIgnoreCase));
+        foreach (var option in ThemeAccentColors)
+        {
+            option.IsSelected = ReferenceEquals(option, matchingOption);
+        }
+
+        if (!ReferenceEquals(SelectedThemeAccentColorOption, matchingOption))
+        {
+            SelectedThemeAccentColorOption = matchingOption;
+        }
+
+        OnPropertyChanged(nameof(ThemeAccentSourceDisplay));
+    }
+
+    private static string NormalizeThemeAccent(string? accent)
+        => TryNormalizeThemeAccent(accent, out var normalized) ? normalized : "#FF0078D7";
+
+    private static bool TryNormalizeThemeAccent(string? accent, out string normalized)
+    {
+        if (!string.IsNullOrWhiteSpace(accent) && Color.TryParse(accent, out var color))
+        {
+            normalized = FormatColor(color);
+            return true;
+        }
+
+        normalized = string.Empty;
+        return false;
+    }
+
+    private static string FormatColor(Color color)
+        => $"#{color.A:X2}{color.R:X2}{color.G:X2}{color.B:X2}";
+
+    private void OnThemeAccentExpandedChanged(bool isExpanded)
+    {
+        if (!isExpanded || HasLoadedThemeAccentContent)
+        {
+            return;
+        }
+
+        InitializeThemeAccentColors();
+        HasLoadedThemeAccentContent = true;
     }
 
     private string GetString(string key, string fallback)
@@ -1497,6 +1805,62 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
         return await dialog.ShowDialog<bool>(owner);
     }
 
+    private async Task<bool> ShowResetSettingsDialogAsync(Window owner)
+    {
+        var dialog = new Window
+        {
+            Width = 420,
+            Height = 180,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Title = GetString("Settings.Data.Reset.ConfirmTitle", "Reset Settings")
+        };
+
+        var message = new TextBlock
+        {
+            Text = GetString("Settings.Data.Reset.ConfirmMessage", "Reset all settings to defaults? This action cannot be undone."),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 16)
+        };
+
+        var confirmButton = new Button
+        {
+            Content = GetString("Settings.Data.Reset.ConfirmButton", "Reset"),
+            MinWidth = 110,
+            Classes = { "accent" }
+        };
+        confirmButton.Click += (_, _) => dialog.Close(true);
+
+        var cancelButton = new Button
+        {
+            Content = GetString("Settings.Data.StoreInAppDir.CancelButton", "Cancel"),
+            MinWidth = 90
+        };
+        cancelButton.Click += (_, _) => dialog.Close(false);
+
+        dialog.Content = new StackPanel
+        {
+            Margin = new Thickness(20),
+            Children =
+            {
+                message,
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Spacing = 8,
+                    Children =
+                    {
+                        cancelButton,
+                        confirmButton
+                    }
+                }
+            }
+        };
+
+        return await dialog.ShowDialog<bool>(owner);
+    }
+
     private async Task ShowRestartRequiredDialogAndRestartAsync(Window owner)
     {
         await ShowRestartRequiredDialogAndRestartAsync(
@@ -1758,6 +2122,21 @@ public partial class UpdateChannelOptionViewModel : ObservableObject
     {
         Channel = channel;
         _displayName = displayName;
+    }
+}
+
+public partial class AccentColorOptionViewModel : ObservableObject
+{
+    public string ColorHex { get; }
+    public IBrush Brush { get; }
+
+    [ObservableProperty]
+    private bool _isSelected;
+
+    public AccentColorOptionViewModel(Color color)
+    {
+        ColorHex = $"#{color.A:X2}{color.R:X2}{color.G:X2}{color.B:X2}";
+        Brush = new SolidColorBrush(color);
     }
 }
 

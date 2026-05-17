@@ -22,6 +22,7 @@ public partial class AppUpdateCoordinator : ObservableObject
     private bool _requiresManualAppUpdate;
     private bool _suppressChannelNormalization;
     private bool _isCompletionPromptVisible;
+    private bool _isLatestAppVersion;
 
     [ObservableProperty]
     private string _selectedUpdateChannel = "release";
@@ -66,6 +67,24 @@ public partial class AppUpdateCoordinator : ObservableObject
         ? $"{FormatHelper.FormatBytes(AppUpdateBytesReceived)} / {FormatHelper.FormatBytes(AppUpdateTotalBytes)}"
         : string.Empty;
 
+    public string LatestAvailableVersionDisplay
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(LatestAvailableVersion))
+            {
+                return LatestAvailableVersion;
+            }
+
+            return _isLatestAppVersion
+                ? GetString("Settings.Update.Status.Latest", "Already up to date")
+                : string.Empty;
+        }
+    }
+
+    public bool ShouldShowAppUpdateStatus
+        => !string.IsNullOrWhiteSpace(AppUpdateStatus) && !_isLatestAppVersion;
+
     public AppUpdateCoordinator()
     {
         InitializeState();
@@ -82,6 +101,12 @@ public partial class AppUpdateCoordinator : ObservableObject
 
     partial void OnAppUpdateBytesReceivedChanged(long value) => OnPropertyChanged(nameof(AppUpdateProgressDetail));
     partial void OnAppUpdateTotalBytesChanged(long value) => OnPropertyChanged(nameof(AppUpdateProgressDetail));
+    partial void OnAppUpdateStatusChanged(string value)
+    {
+        OnPropertyChanged(nameof(LatestAvailableVersionDisplay));
+        OnPropertyChanged(nameof(ShouldShowAppUpdateStatus));
+    }
+    partial void OnLatestAvailableVersionChanged(string value) => OnPropertyChanged(nameof(LatestAvailableVersionDisplay));
 
     partial void OnSelectedUpdateChannelChanged(string value)
     {
@@ -107,6 +132,17 @@ public partial class AppUpdateCoordinator : ObservableObject
         _suppressChannelNormalization = true;
         SelectedUpdateChannel = NormalizeUpdateChannel(channel);
         _suppressChannelNormalization = false;
+    }
+
+    public void RefreshLocalizedTexts()
+    {
+        if (_isLatestAppVersion)
+        {
+            AppUpdateStatus = GetString("Settings.Update.Status.Latest", "Already up to date");
+        }
+
+        OnPropertyChanged(nameof(LatestAvailableVersionDisplay));
+        OnPropertyChanged(nameof(ShouldShowAppUpdateStatus));
     }
 
     public Task RunStartupCheckAsync(bool enabled)
@@ -164,6 +200,7 @@ public partial class AppUpdateCoordinator : ObservableObject
 
         IsCheckingAppUpdate = true;
         ShowStartupUpdateDialog = false;
+        _isLatestAppVersion = false;
         AppUpdateStatus = GetString("Settings.Update.Status.Checking", "Checking for updates...");
         try
         {
@@ -194,7 +231,7 @@ public partial class AppUpdateCoordinator : ObservableObject
                 else
                 {
                     ClearAvailableUpdateState();
-                    AppUpdateStatus = GetString("Settings.Update.Status.Latest", "Already up to date");
+                    SetLatestAppUpdateStatus();
                 }
 
                 return;
@@ -218,11 +255,12 @@ public partial class AppUpdateCoordinator : ObservableObject
 
                 AppUpdateStatus = IsAppUpdateReadyToInstall
                     ? GetString("Settings.Update.Status.Ready", "Update downloaded. Restart to apply.")
-                    : GetString("Settings.Update.Status.Latest", "Already up to date");
+                    : SetLatestAppUpdateStatus();
                 return;
             }
 
             _pendingAppUpdate = result;
+            _isLatestAppVersion = false;
             LatestAvailableVersion = result.Version;
             IsAppUpdateAvailable = true;
             IsAppUpdateReadyToInstall = false;
@@ -236,6 +274,7 @@ public partial class AppUpdateCoordinator : ObservableObject
         catch (Exception ex)
         {
             ClearAvailableUpdateState();
+            _isLatestAppVersion = false;
             IsAppUpdateReadyToInstall = false;
             ShowStartupUpdateDialog = false;
             AppUpdateStatus = $"{GetString("Settings.Update.Status.Error", "Update failed")}: {ex.Message}";
@@ -276,6 +315,7 @@ public partial class AppUpdateCoordinator : ObservableObject
         }
 
         IsDownloadingAppUpdate = true;
+        _isLatestAppVersion = false;
         IsAppUpdateReadyToInstall = false;
         if (silentDownload)
         {
@@ -557,6 +597,16 @@ public partial class AppUpdateCoordinator : ObservableObject
             : string.Empty;
     }
 
+    private string SetLatestAppUpdateStatus()
+    {
+        _isLatestAppVersion = true;
+        var status = GetString("Settings.Update.Status.Latest", "Already up to date");
+        AppUpdateStatus = status;
+        OnPropertyChanged(nameof(LatestAvailableVersionDisplay));
+        OnPropertyChanged(nameof(ShouldShowAppUpdateStatus));
+        return status;
+    }
+
     private void ClearAvailableUpdateState()
     {
         _pendingAppUpdate = null;
@@ -572,6 +622,7 @@ public partial class AppUpdateCoordinator : ObservableObject
     private void ResetAvailableStateForChannelChange()
     {
         ShowStartupUpdateDialog = false;
+        _isLatestAppVersion = false;
         if (IsDownloadingAppUpdate || IsAppUpdateReadyToInstall)
         {
             return;

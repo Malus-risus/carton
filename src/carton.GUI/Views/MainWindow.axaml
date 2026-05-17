@@ -35,18 +35,9 @@
       <Setter Property="Height" Value="20"/>
     </Style>
     <Style Selector="ui|NavigationViewItem.navItem /template/ uip|NavigationViewItemPresenter /template/ Border#SelectionIndicator">
-      <Setter Property="Background" Value="{DynamicResource NavigationViewSelectionIndicatorForeground}"/>
-      <Setter Property="Transitions">
-        <Setter.Value>
-          <Transitions>
-            <DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
-          </Transitions>
-        </Setter.Value>
-      </Setter>
+      <Setter Property="IsVisible" Value="False"/>
     </Style>
-    <Style Selector="ui|NavigationViewItem.navItem /template/ uip|NavigationViewItemPresenter:selected /template/ Border#SelectionIndicator">
-      <Setter Property="Opacity" Value="1"/>
-    </Style>
+
   </Window.Styles>
 
   <Design.DataContext>

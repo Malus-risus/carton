@@ -290,7 +290,6 @@ public partial class MainWindow : Window
 
     private void ApplyNavigationSelectionIndicator(NavigationItem selectedItem, bool retryIfMissing = false)
     {
-        var foundSelectedIndicator = false;
         foreach (var item in GetNavigationItemContainers())
         {
             var indicator = item.GetVisualDescendants()
@@ -302,16 +301,7 @@ public partial class MainWindow : Window
                 continue;
             }
 
-            var isSelected = IsContainerForNavigationItem(item, selectedItem);
-            indicator.Opacity = isSelected ? 1 : 0;
-            foundSelectedIndicator |= isSelected;
-        }
-
-        if (retryIfMissing && !foundSelectedIndicator)
-        {
-            Dispatcher.UIThread.Post(
-                () => ApplyNavigationSelectionIndicator(selectedItem),
-                DispatcherPriority.Loaded);
+            indicator.Opacity = 0;
         }
     }
 

@@ -267,17 +267,29 @@
 	<x:String x:Key="Settings.Appearance.Theme.System">Follow system</x:String>
 	<x:String x:Key="Settings.Appearance.Theme.Light">Light</x:String>
 	<x:String x:Key="Settings.Appearance.Theme.Dark">Dark</x:String>
+	<x:String x:Key="Settings.Appearance.ThemeAccent">Theme Color</x:String>
+	<x:String x:Key="Settings.Appearance.ThemeAccent.Description">Choose the accent color used by control highlights, toggles, and selected states.</x:String>
+	<x:String x:Key="Settings.Appearance.ThemeAccent.SystemDefault">System default</x:String>
+	<x:String x:Key="Settings.Appearance.ThemeAccent.Custom">Custom</x:String>
+	<x:String x:Key="Settings.Appearance.ThemeAccent.PreviewColor">Preview color</x:String>
+	<x:String x:Key="Settings.Appearance.ThemeAccent.WindowsColors">Windows preset colors</x:String>
+	<x:String x:Key="Settings.Appearance.ThemeAccent.CustomColor">Custom color</x:String>
+	<x:String x:Key="Settings.Appearance.ThemeAccent.Source.WindowsPreset">Current: Windows preset color</x:String>
+	<x:String x:Key="Settings.Appearance.ThemeAccent.Source.Custom">Current: custom color</x:String>
 	<x:String x:Key="Settings.Appearance.Language">Language</x:String>
 
 	<x:String x:Key="Settings.Section.Data">Data</x:String>
-	<x:String x:Key="Settings.Data.StoreInAppDir">Store data in application directory</x:String>
+	<x:String x:Key="Settings.Data.StoreInAppDir">Portable Data Mode</x:String>
 	<x:String x:Key="Settings.Data.StoreInAppDir.ConfirmTitle">Confirm Data Location Change</x:String>
 	<x:String x:Key="Settings.Data.StoreInAppDir.ConfirmMessageEnable">Are you sure you want to store data in the application directory? This requires a restart, and your existing config will be copied.</x:String>
 	<x:String x:Key="Settings.Data.StoreInAppDir.ConfirmMessageDisable">Are you sure you want to stop storing data in the application directory (revert to AppData)? This requires a restart, and config will be copied.</x:String>
 	<x:String x:Key="Settings.Data.StoreInAppDir.ConfirmButton">Confirm</x:String>
 	<x:String x:Key="Settings.Data.StoreInAppDir.CancelButton">Cancel</x:String>
 	<x:String x:Key="Settings.Data.StoreInAppDir.Failed">Failed to change data directory</x:String>
+	<x:String x:Key="Settings.Data.StorageSpace">Storage Space</x:String>
+	<x:String x:Key="Settings.Data.Directory">Data Directory</x:String>
 	<x:String x:Key="Settings.Data.OpenFolder">Open Data Folder</x:String>
+	<x:String x:Key="Settings.Data.Cleanup">Cleanup</x:String>
 	<x:String x:Key="Settings.Data.ClearAll">Clear All Data</x:String>
 	<x:String x:Key="Settings.Data.Backup.Export">Export Backup</x:String>
 	<x:String x:Key="Settings.Data.Backup.Import">Import Backup</x:String>
@@ -311,6 +323,10 @@ This action cannot be undone. Continue?</x:String>
 	<x:String x:Key="Settings.Data.ClearAll.Restart.Message">Data has been cleared. The app needs to restart to recreate defaults.</x:String>
 	<x:String x:Key="Settings.Data.ClearAll.PortableNotSupported">Portable mode stores data in the application directory. Clear it manually after closing the app.</x:String>
 	<x:String x:Key="Settings.Data.Reset">Reset Settings</x:String>
+	<x:String x:Key="Settings.Data.Reset.ConfirmTitle">Reset Settings</x:String>
+	<x:String x:Key="Settings.Data.Reset.ConfirmMessage">Reset all settings to defaults? This action cannot be undone.</x:String>
+	<x:String x:Key="Settings.Data.Reset.ConfirmButton">Reset</x:String>
+	<x:String x:Key="Settings.Data.Reset.Success">Settings reset</x:String>
 
 	<x:String x:Key="Settings.Section.About">About</x:String>
 	<x:String x:Key="Settings.About.Name">Carton</x:String>

@@ -32,7 +32,7 @@ public partial class App : Application
         HttpClientFactory.Initialize(CartonApplicationInfo.Version);
         var preferences = LoadOrCreatePreferences();
         LocalizationService.Instance.Initialize(preferences.Language);
-        ThemeService.Instance.Initialize(preferences.Theme);
+        ThemeService.Instance.Initialize(preferences.Theme, preferences.UseSystemThemeAccent, preferences.ThemeAccent);
     }
 
     public override void OnFrameworkInitializationCompleted()

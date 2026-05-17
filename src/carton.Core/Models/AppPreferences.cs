@@ -11,6 +11,8 @@ public class AppPreferences
     public KernelCacheCleanupPolicy KernelCacheCleanupPolicy { get; set; } = KernelCacheCleanupPolicy.ClearOnChannelChange;
     public KernelInstallChannel? LastInstalledKernelChannel { get; set; }
     public AppTheme Theme { get; set; } = AppTheme.System;
+    public bool UseSystemThemeAccent { get; set; } = true;
+    public string ThemeAccent { get; set; } = "#FF0078D7";
     public AppLanguage Language { get; set; } = AppLanguage.English;
     public AppUpdateChannel UpdateChannel { get; set; } = AppUpdateChannel.Release;
     public DownloadMirror KernelDownloadMirror { get; set; } = DownloadMirror.GitHub;

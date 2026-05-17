@@ -227,6 +227,7 @@ public partial class MainViewModel : ViewModelBase
         {
             RefreshNavigationItemTitles();
             OnPropertyChanged(nameof(KernelPrimaryActionText));
+            _appUpdateCoordinator.RefreshLocalizedTexts();
         });
     }
 
@@ -265,6 +266,7 @@ public partial class MainViewModel : ViewModelBase
         _localizationService.SetLanguage(_currentPreferences.Language);
         RefreshNavigationItemTitles();
         _themeService.ApplyTheme(_currentPreferences.Theme);
+        _themeService.ApplyAccent(_currentPreferences.UseSystemThemeAccent, _currentPreferences.ThemeAccent);
         _autoStartOnLaunch = _currentPreferences.AutoStartOnLaunch;
 
         var kernelInfo = await _kernelManager.GetInstalledKernelInfoAsync();
