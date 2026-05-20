@@ -1,7 +1,6 @@
 using System.Buffers;
 using System.Diagnostics;
 using System.Net.WebSockets;
-using System.Text;
 using System.Text.Json;
 using carton.Core.Models;
 using carton.Core.Utilities;
@@ -138,9 +137,9 @@ public partial class SingBoxManager
                         continue;
                     }
 
-                    var payload = Encoding.UTF8.GetString(stream.GetBuffer().AsSpan(0, (int)stream.Length));
-                    ResetMessageBuffer(stream);
+                    var payload = stream.GetBuffer().AsMemory(0, (int)stream.Length);
                     var traffic = TryParseTrafficSnapshot(payload);
+                    ResetMessageBuffer(stream);
                     if (traffic == null)
                     {
                         continue;
@@ -261,9 +260,9 @@ public partial class SingBoxManager
                         continue;
                     }
 
-                    var payload = Encoding.UTF8.GetString(stream.GetBuffer().AsSpan(0, (int)stream.Length));
-                    ResetMessageBuffer(stream);
+                    var payload = stream.GetBuffer().AsMemory(0, (int)stream.Length);
                     var memoryInUse = TryParseMemorySnapshot(payload);
+                    ResetMessageBuffer(stream);
                     if (!memoryInUse.HasValue)
                     {
                         continue;
@@ -301,9 +300,9 @@ public partial class SingBoxManager
         }
     }
 
-    private TrafficInfo? TryParseTrafficSnapshot(string payload)
+    private TrafficInfo? TryParseTrafficSnapshot(ReadOnlyMemory<byte> payload)
     {
-        if (string.IsNullOrWhiteSpace(payload))
+        if (IsEmptyOrJsonWhitespace(payload.Span))
         {
             return null;
         }
@@ -327,9 +326,9 @@ public partial class SingBoxManager
         }
     }
 
-    private long? TryParseMemorySnapshot(string payload)
+    private long? TryParseMemorySnapshot(ReadOnlyMemory<byte> payload)
     {
-        if (string.IsNullOrWhiteSpace(payload))
+        if (IsEmptyOrJsonWhitespace(payload.Span))
         {
             return null;
         }
@@ -357,6 +356,19 @@ public partial class SingBoxManager
             LogManager($"[WARN] Failed to parse memory snapshot: {ex.Message}");
             return null;
         }
+    }
+
+    private static bool IsEmptyOrJsonWhitespace(ReadOnlySpan<byte> payload)
+    {
+        foreach (var value in payload)
+        {
+            if (value is not ((byte)' ' or (byte)'\t' or (byte)'\r' or (byte)'\n'))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static long ReadTrafficValue(JsonElement root, IReadOnlyList<string> propertyNames)

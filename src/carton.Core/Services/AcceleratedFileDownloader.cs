@@ -158,18 +158,25 @@ public sealed class AcceleratedFileDownloader
                         FileOptions.Asynchronous | FileOptions.RandomAccess);
                     target.Seek(start, SeekOrigin.Begin);
 
-                    var buffer = new byte[ParallelDownloadBufferSize];
-                    while (true)
+                    var buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(ParallelDownloadBufferSize);
+                    try
                     {
-                        var read = await source.ReadAsync(buffer, token).ConfigureAwait(false);
-                        if (read <= 0)
+                        while (true)
                         {
-                            break;
-                        }
+                            var read = await source.ReadAsync(buffer.AsMemory(0, ParallelDownloadBufferSize), token).ConfigureAwait(false);
+                            if (read <= 0)
+                            {
+                                break;
+                            }
 
-                        await target.WriteAsync(buffer.AsMemory(0, read), token).ConfigureAwait(false);
-                        var currentBytes = Interlocked.Add(ref downloadedBytes, read);
-                        ReportProgress(progress, currentBytes, totalBytes);
+                            await target.WriteAsync(buffer.AsMemory(0, read), token).ConfigureAwait(false);
+                            var currentBytes = Interlocked.Add(ref downloadedBytes, read);
+                            ReportProgress(progress, currentBytes, totalBytes);
+                        }
+                    }
+                    finally
+                    {
+                        System.Buffers.ArrayPool<byte>.Shared.Return(buffer);
                     }
                 }).ConfigureAwait(false);
         }
@@ -196,20 +203,27 @@ public sealed class AcceleratedFileDownloader
             SequentialDownloadBufferSize,
             useAsync: true);
 
-        var buffer = new byte[SequentialDownloadBufferSize];
-        var bytesRead = 0L;
-
-        while (true)
+        var buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(SequentialDownloadBufferSize);
+        try
         {
-            var read = await contentStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
-            if (read <= 0)
-            {
-                break;
-            }
+            var bytesRead = 0L;
 
-            await fileStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
-            bytesRead += read;
-            ReportProgress(progress, bytesRead, totalBytes);
+            while (true)
+            {
+                var read = await contentStream.ReadAsync(buffer.AsMemory(0, SequentialDownloadBufferSize), cancellationToken).ConfigureAwait(false);
+                if (read <= 0)
+                {
+                    break;
+                }
+
+                await fileStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                bytesRead += read;
+                ReportProgress(progress, bytesRead, totalBytes);
+            }
+        }
+        finally
+        {
+            System.Buffers.ArrayPool<byte>.Shared.Return(buffer);
         }
     }
 
