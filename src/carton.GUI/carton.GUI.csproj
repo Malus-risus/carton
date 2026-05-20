@@ -22,6 +22,7 @@
 	<PropertyGroup Condition="'$(PublishAot)' == 'true'">
 		<OptimizationPreference>Size</OptimizationPreference>
 		<TrimMode>full</TrimMode>
+		<NoWarn>$(NoWarn);IL2104;IL3053</NoWarn>
 		<DebuggerSupport>false</DebuggerSupport>
 		<EventSourceSupport>false</EventSourceSupport>
 		<Http3Support>false</Http3Support>
