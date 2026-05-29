@@ -186,6 +186,7 @@ public sealed class JsonConfigEditor : Grid
     {
         _searchQuery = query ?? string.Empty;
         _searchDebounceTokenSource?.Cancel();
+        _searchDebounceTokenSource?.Dispose();
         _searchDebounceTokenSource = new CancellationTokenSource();
         var token = _searchDebounceTokenSource.Token;
         _ = DebounceSearchAsync(token);
@@ -1130,7 +1131,11 @@ public sealed class JsonConfigEditor : Grid
             EnsureMetrics();
             BuildLines();
 
+            // 取消并释放上一次的词法任务令牌(后台任务只读已取消状态的 token,释放安全),
+            // 置空以避免下次在已释放对象上调用 Cancel 抛 ObjectDisposedException。
             _tokenizeCts?.Cancel();
+            _tokenizeCts?.Dispose();
+            _tokenizeCts = null;
             var version = ++_tokenizeVersion;
 
             if (Text.Length >= BackgroundTokenizeThreshold)
