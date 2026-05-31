@@ -49,7 +49,7 @@ public partial class LogsViewModel : PageViewModelBase, IDisposable
     [ObservableProperty]
     private bool _isAutoScrollToLatest = true;
 
-    public ObservableCollection<string> LogLevels { get; } = new() { "All", "Debug", "Info", "Warn", "Error" };
+    public ObservableCollection<string> LogLevels { get; } = new() { "All", "Debug", "Info", "Warn", "Error", "Fatal" };
     public ObservableCollection<LogSourceFilterOptionViewModel> LogSourceFilters { get; } = new();
 
     public LogsViewModel(LogStore logStore)

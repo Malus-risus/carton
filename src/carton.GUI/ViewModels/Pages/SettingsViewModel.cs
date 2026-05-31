@@ -88,6 +88,12 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
     private string _loopbackStatus = string.Empty;
 
     [ObservableProperty]
+    private bool _isElevatedTaskOperationInProgress;
+
+    [ObservableProperty]
+    private string _elevatedTaskStatus = string.Empty;
+
+    [ObservableProperty]
     private AppTheme _selectedTheme = AppTheme.System;
 
     [ObservableProperty]
@@ -171,6 +177,7 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
     partial void OnCustomUserAgentChanged(string value) => UpdatePreference(p => p.CustomUserAgent = value);
     partial void OnSelectedKernelCacheCleanupPolicyChanged(KernelCacheCleanupPolicy value) => UpdatePreference(p => p.KernelCacheCleanupPolicy = value);
     partial void OnLoopbackStatusChanged(string value) => OnPropertyChanged(nameof(HasLoopbackStatus));
+    partial void OnElevatedTaskStatusChanged(string value) => OnPropertyChanged(nameof(HasElevatedTaskStatus));
     partial void OnSelectedKernelDownloadMirrorChanged(DownloadMirror value)
     {
         ClearPendingKernelPackage();
@@ -275,6 +282,7 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
     public ObservableCollection<UpdateChannelOptionViewModel> UpdateChannels { get; } = new();
     public bool IsWindows => RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
     public bool HasLoopbackStatus => !string.IsNullOrWhiteSpace(LoopbackStatus);
+    public bool HasElevatedTaskStatus => !string.IsNullOrWhiteSpace(ElevatedTaskStatus);
     public bool HasDataOperationStatus => !string.IsNullOrWhiteSpace(DataOperationStatus);
     public bool CanCheckKernelUpdate => !IsUpdatingKernel && !IsCheckingKernelUpdate;
     public bool CanUninstallKernel => IsKernelInstalled && !IsUpdatingKernel && !IsBuiltinKernel;
@@ -763,6 +771,63 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
         finally
         {
             IsLoopbackOperationInProgress = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task RepairElevatedTaskAsync()
+    {
+        if (!OperatingSystem.IsWindows() || IsElevatedTaskOperationInProgress)
+        {
+            return;
+        }
+
+        IsElevatedTaskOperationInProgress = true;
+        try
+        {
+            await WindowsElevatedHelperTaskUtility.DeleteTaskAsync();
+
+            var executablePath = Environment.ProcessPath;
+            if (string.IsNullOrWhiteSpace(executablePath))
+            {
+                executablePath = Process.GetCurrentProcess().MainModule?.FileName;
+            }
+
+            var workingDirectory = Path.Combine(carton.Core.Utilities.PathHelper.GetAppDataPath(), "data");
+            Directory.CreateDirectory(workingDirectory);
+
+            var result = await WindowsElevatedHelperTaskUtility.EnsureRegisteredAsync(
+                workingDirectory,
+                executablePath);
+            if (result.Success)
+            {
+                ElevatedTaskStatus = GetString(
+                    "Settings.General.ElevatedTask.Repaired",
+                    "Admin startup task repaired.");
+            }
+            else if (result.Cancelled)
+            {
+                ElevatedTaskStatus = GetString(
+                    "Settings.General.ElevatedTask.Cancelled",
+                    "Admin startup task repair was canceled.");
+            }
+            else
+            {
+                var details = string.IsNullOrWhiteSpace(result.ErrorMessage)
+                    ? string.Empty
+                    : $": {result.ErrorMessage}";
+                ElevatedTaskStatus =
+                    $"{GetString("Settings.General.ElevatedTask.Failed", "Failed to repair admin startup task")}{details}";
+            }
+        }
+        catch (Exception ex)
+        {
+            ElevatedTaskStatus =
+                $"{GetString("Settings.General.ElevatedTask.Failed", "Failed to repair admin startup task")}: {ex.Message}";
+        }
+        finally
+        {
+            IsElevatedTaskOperationInProgress = false;
         }
     }
 
@@ -2027,6 +2092,18 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
             {
                 CopyPortableData(oldAppDataPath, newAppDataPath);
             }
+
+            if (OperatingSystem.IsWindows())
+            {
+                try
+                {
+                    await WindowsElevatedHelperTaskUtility.DeleteTaskAsync();
+                }
+                catch
+                {
+                }
+            }
+
             await RestartApplicationAsync(window);
         }
         catch (Exception ex)

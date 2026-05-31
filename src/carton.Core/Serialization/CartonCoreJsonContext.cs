@@ -17,4 +17,6 @@ namespace carton.Core.Serialization;
 [JsonSerializable(typeof(OutboundSelectionRequest))]
 [JsonSerializable(typeof(WindowsHelperStartRequest))]
 [JsonSerializable(typeof(WindowsHelperActionResponse))]
+[JsonSerializable(typeof(WindowsHelperProcessStatusResponse))]
+[JsonSerializable(typeof(WindowsHelperLaunchRequest))]
 internal partial class CartonCoreJsonContext : JsonSerializerContext;

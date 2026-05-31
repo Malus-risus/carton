@@ -151,6 +151,7 @@ SectionEnd
 
 Section "Uninstall"
   Call un.EnsureAppNotRunningForUninstall
+  Call un.DeleteElevatedHelperTask
 
   Delete "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk"
   RMDir "$SMPROGRAMS\${APP_NAME}"
@@ -315,4 +316,8 @@ Function un.EnsureAppNotRunningForUninstall
       uninstall_abort:
         Abort
     ${EndIf}
+FunctionEnd
+
+Function un.DeleteElevatedHelperTask
+  nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -Command "$$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; if ($$sid) { $$task = ''Carton-ElevatedHelper-'' + $$sid.Replace(''-'', ''_''); & schtasks.exe /Delete /TN $$task /F | Out-Null }; & schtasks.exe /Delete /TN ''Carton-ElevatedHelper'' /F | Out-Null"'
 FunctionEnd

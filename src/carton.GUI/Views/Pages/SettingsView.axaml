@@ -614,6 +614,24 @@
                    Text="{Binding LoopbackStatus}"
                    IsVisible="{Binding HasLoopbackStatus}"
                    Margin="16,4"/>
+        <Border Classes="settingsItem" IsVisible="{Binding IsWindows}">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <StackPanel Spacing="3">
+              <TextBlock Classes="settingsTitle" Text="{DynamicResource Settings.General.ElevatedTask.Title}"/>
+              <TextBlock Classes="settingsDescription" Text="{DynamicResource Settings.General.ElevatedTask.Description}"/>
+            </StackPanel>
+            <Button Grid.Column="1"
+                    Content="{DynamicResource Settings.General.ElevatedTask.Action}"
+                    Command="{Binding RepairElevatedTaskCommand}"
+                    IsEnabled="{Binding !IsElevatedTaskOperationInProgress}"
+                    VerticalAlignment="Center"/>
+          </Grid>
+        </Border>
+        <TextBlock Classes="settingsDescription"
+                   Text="{Binding ElevatedTaskStatus}"
+                   IsVisible="{Binding HasElevatedTaskStatus}"
+                   Margin="16,4"
+                   TextWrapping="Wrap"/>
       </StackPanel>
       </StackPanel>
 

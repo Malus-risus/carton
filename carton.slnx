@@ -2,5 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/carton.Core/carton.Core.csproj" />
     <Project Path="src/carton.GUI/carton.GUI.csproj" />
+    <Project Path="src/carton.GUI.Tests/carton.GUI.Tests.csproj" />
+    <Project Path="src/carton.GUI.Benchmarks/carton.GUI.Benchmarks.csproj" />
   </Folder>
 </Solution>

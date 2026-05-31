@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using carton.Core.Models;
@@ -9,14 +10,13 @@ namespace carton.Core.Services;
 
 public static class WindowsElevatedHelperHost
 {
-    private const string HelperArg = "--carton-elevated-helper";
     private const string TokenHeader = "X-Carton-Helper-Token";
 
     public static bool TryRunFromArgs(string[] args)
     {
         if (!OperatingSystem.IsWindows() ||
             args.Length == 0 ||
-            !string.Equals(args[0], HelperArg, StringComparison.OrdinalIgnoreCase))
+            !string.Equals(args[0], WindowsElevatedHelperTaskUtility.HelperArg, StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
@@ -24,6 +24,7 @@ public static class WindowsElevatedHelperHost
         var port = 0;
         var parentPid = 0;
         string? token = null;
+        string? requestFilePath = null;
         for (var i = 1; i < args.Length; i++)
         {
             if (string.Equals(args[i], "--port", StringComparison.OrdinalIgnoreCase) &&
@@ -49,16 +50,73 @@ public static class WindowsElevatedHelperHost
             {
                 parentPid = parsedParentPid;
                 i++;
+                continue;
+            }
+
+            if (string.Equals(args[i], WindowsElevatedHelperTaskUtility.RequestFileArg, StringComparison.OrdinalIgnoreCase) &&
+                i + 1 < args.Length)
+            {
+                requestFilePath = args[i + 1];
+                i++;
             }
         }
 
-        if (port <= 0 || string.IsNullOrWhiteSpace(token))
+        if (!TryResolveLaunchParameters(requestFilePath, ref port, ref token, ref parentPid))
         {
             return true;
         }
 
-        RunAsync(port, token, parentPid).GetAwaiter().GetResult();
+        RunAsync(port, token!, parentPid).GetAwaiter().GetResult();
         return true;
+    }
+
+    private static bool TryResolveLaunchParameters(
+        string? requestFilePath,
+        ref int port,
+        ref string? token,
+        ref int parentPid)
+    {
+        if (!string.IsNullOrWhiteSpace(requestFilePath))
+        {
+            try
+            {
+                if (!File.Exists(requestFilePath))
+                {
+                    return false;
+                }
+
+                var payload = File.ReadAllText(requestFilePath);
+                try
+                {
+                    File.Delete(requestFilePath);
+                }
+                catch
+                {
+                }
+
+                var launchRequest = JsonSerializer.Deserialize(
+                    payload,
+                    CartonCoreJsonContext.Default.WindowsHelperLaunchRequest);
+                if (launchRequest == null ||
+                    launchRequest.Port <= 0 ||
+                    string.IsNullOrWhiteSpace(launchRequest.Token) ||
+                    launchRequest.ExpiresAtUtc <= DateTimeOffset.UtcNow)
+                {
+                    return false;
+                }
+
+                port = launchRequest.Port;
+                token = launchRequest.Token;
+                parentPid = launchRequest.ParentPid;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        return port > 0 && !string.IsNullOrWhiteSpace(token);
     }
 
     private static async Task RunAsync(int port, string token, int parentPid)
@@ -77,8 +135,37 @@ public static class WindowsElevatedHelperHost
         StreamWriter? logWriter = null;
         Task? stdoutTask = null;
         Task? stderrTask = null;
+        CancellationTokenSource? startupWatchCts = null;
+        Task? startupWatchTask = null;
+        int? lastKnownPid = null;
+        int? lastKnownExitCode = null;
+        string? lastKnownError = null;
+        string? lastApiAddress = null;
+        string? lastApiSecret = null;
         var processLock = new object();
         var shouldStop = false;
+
+        static void WriteResponseFile(string path, WindowsHelperActionResponse response)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return;
+            }
+
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
+                var payload = JsonSerializer.Serialize(
+                    response,
+                    CartonCoreJsonContext.Default.WindowsHelperActionResponse);
+                var tempPath = $"{path}.{Guid.NewGuid():N}.tmp";
+                File.WriteAllText(tempPath, payload, new UTF8Encoding(false));
+                File.Move(tempPath, path, overwrite: true);
+            }
+            catch
+            {
+            }
+        }
 
         bool IsParentAlive()
         {
@@ -128,19 +215,82 @@ public static class WindowsElevatedHelperHost
             })
             : null;
 
+        async Task<WindowsHelperProcessStatusResponse> GetProcessStatusAsync()
+        {
+            int? pid;
+            int? exitCode;
+            string? error;
+            bool hasProcess;
+            bool isRunning;
+            string? apiAddress;
+            string? apiSecret;
+
+            lock (processLock)
+            {
+                if (singBoxProcess != null)
+                {
+                    try
+                    {
+                        if (!singBoxProcess.HasExited)
+                        {
+                            pid = singBoxProcess.Id;
+                            exitCode = null;
+                            error = lastKnownError;
+                            hasProcess = true;
+                            isRunning = true;
+                            apiAddress = lastApiAddress;
+                            apiSecret = lastApiSecret;
+                            goto BuildResponse;
+                        }
+
+                        lastKnownPid = singBoxProcess.Id;
+                        lastKnownExitCode = singBoxProcess.ExitCode;
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                pid = lastKnownPid;
+                exitCode = lastKnownExitCode;
+                error = lastKnownError;
+                hasProcess = lastKnownPid.HasValue || !string.IsNullOrWhiteSpace(lastKnownError);
+                isRunning = false;
+                apiAddress = lastApiAddress;
+                apiSecret = lastApiSecret;
+            }
+
+        BuildResponse:
+            var apiReady = isRunning && await IsApiReadyAsync(apiAddress, apiSecret);
+            return new WindowsHelperProcessStatusResponse
+            {
+                HasProcess = hasProcess,
+                IsRunning = isRunning,
+                ApiReady = apiReady,
+                Pid = pid,
+                ExitCode = exitCode,
+                Error = error
+            };
+        }
+
         WindowsHelperActionResponse StopSingBox(bool force)
         {
             lock (processLock)
             {
                 try
                 {
+                    startupWatchCts?.Cancel();
+                    startupWatchCts = null;
                     if (singBoxProcess != null)
                     {
+                        lastKnownPid = singBoxProcess.Id;
                         if (!singBoxProcess.HasExited)
                         {
                             singBoxProcess.Kill(force ? true : true);
                             singBoxProcess.WaitForExit(5000);
                         }
+
+                        lastKnownExitCode = singBoxProcess.ExitCode;
 
                         singBoxProcess.Dispose();
                         singBoxProcess = null;
@@ -168,22 +318,79 @@ public static class WindowsElevatedHelperHost
 
         WindowsHelperActionResponse StartSingBox(WindowsHelperStartRequest request)
         {
+            var recentLogLock = new object();
+            var recentLogLines = new Queue<string>();
+
+            void RememberLogLine(string line)
+            {
+                var normalized = StripTerminalDecorations(line);
+                if (string.IsNullOrWhiteSpace(normalized))
+                {
+                    return;
+                }
+
+                lock (recentLogLock)
+                {
+                    recentLogLines.Enqueue(normalized.Trim());
+                    while (recentLogLines.Count > 20)
+                    {
+                        recentLogLines.Dequeue();
+                    }
+                }
+            }
+
+            string? GetRecentLogSnapshot()
+            {
+                lock (recentLogLock)
+                {
+                    if (recentLogLines.Count == 0)
+                    {
+                        return null;
+                    }
+
+                    return string.Join(" | ", recentLogLines);
+                }
+            }
+
+            void WriteStartResult(WindowsHelperActionResponse response)
+            {
+                WriteResponseFile(request.ResultFilePath, response);
+            }
+
+            WindowsHelperActionResponse ReturnStartResult(WindowsHelperActionResponse response)
+            {
+                WriteStartResult(response);
+                return response;
+            }
+
             if (!File.Exists(request.SingBoxPath))
             {
-                return new WindowsHelperActionResponse
+                var response = new WindowsHelperActionResponse
                 {
                     Success = false,
                     Error = $"sing-box binary not found: {request.SingBoxPath}"
                 };
+                lastApiAddress = request.ApiAddress;
+                lastApiSecret = request.ApiSecret;
+                lastKnownPid = null;
+                lastKnownExitCode = null;
+                lastKnownError = response.Error;
+                return ReturnStartResult(response);
             }
 
             if (!File.Exists(request.ConfigPath))
             {
-                return new WindowsHelperActionResponse
+                var response = new WindowsHelperActionResponse
                 {
                     Success = false,
                     Error = $"config file not found: {request.ConfigPath}"
                 };
+                lastApiAddress = request.ApiAddress;
+                lastApiSecret = request.ApiSecret;
+                lastKnownPid = null;
+                lastKnownExitCode = null;
+                lastKnownError = response.Error;
+                return ReturnStartResult(response);
             }
 
             lock (processLock)
@@ -192,6 +399,8 @@ public static class WindowsElevatedHelperHost
 
                 try
                 {
+                    lastApiAddress = request.ApiAddress;
+                    lastApiSecret = request.ApiSecret;
                     Directory.CreateDirectory(Path.GetDirectoryName(request.LogPath) ?? ".");
                     var stream = new FileStream(
                         request.LogPath,
@@ -219,23 +428,77 @@ public static class WindowsElevatedHelperHost
 
                     process.Start();
                     singBoxProcess = process;
-                    stdoutTask = PumpStreamAsync(process.StandardOutput, logWriter);
-                    stderrTask = PumpStreamAsync(process.StandardError, logWriter);
+                    lastKnownPid = process.Id;
+                    lastKnownExitCode = null;
+                    lastKnownError = null;
+                    stdoutTask = PumpStreamAsync(process.StandardOutput, logWriter, RememberLogLine);
+                    stderrTask = PumpStreamAsync(process.StandardError, logWriter, RememberLogLine);
+
+                    if (process.WaitForExit(300))
+                    {
+                        try
+                        {
+                            stdoutTask?.Wait(500);
+                            stderrTask?.Wait(500);
+                        }
+                        catch
+                        {
+                        }
+
+                        var recentLog = GetRecentLogSnapshot() ?? TryReadRecentLog(request.LogPath, 10);
+                        var response = new WindowsHelperActionResponse
+                        {
+                            Success = false,
+                            Error = string.IsNullOrWhiteSpace(recentLog)
+                                ? $"sing-box exited with code {process.ExitCode}"
+                                : recentLog
+                        };
+                        lastKnownExitCode = process.ExitCode;
+                        lastKnownError = response.Error;
+                        return ReturnStartResult(response);
+                    }
 
                     if (process.HasExited)
                     {
-                        return new WindowsHelperActionResponse
+                        var recentLog = GetRecentLogSnapshot() ?? TryReadRecentLog(request.LogPath, 10);
+                        var response = new WindowsHelperActionResponse
                         {
                             Success = false,
-                            Error = $"sing-box exited with code {process.ExitCode}"
+                            Error = string.IsNullOrWhiteSpace(recentLog)
+                                ? $"sing-box exited with code {process.ExitCode}"
+                                : recentLog
                         };
+                        lastKnownExitCode = process.ExitCode;
+                        lastKnownError = response.Error;
+                        return ReturnStartResult(response);
                     }
 
-                    return new WindowsHelperActionResponse { Success = true, Pid = process.Id };
+                    startupWatchCts = new CancellationTokenSource();
+                    startupWatchTask = WatchStartupExitAsync(
+                        process,
+                        () => GetRecentLogSnapshot() ?? TryReadRecentLog(request.LogPath, 12),
+                        (exitCode, recentLog) =>
+                        {
+                            lock (processLock)
+                            {
+                                lastKnownPid = process.Id;
+                                lastKnownExitCode = exitCode;
+                                lastKnownError = string.IsNullOrWhiteSpace(recentLog)
+                                    ? $"sing-box exited with code {exitCode} before API became ready"
+                                    : recentLog;
+                            }
+                        },
+                        startupWatchCts.Token);
+
+                    return ReturnStartResult(new WindowsHelperActionResponse { Success = true, Pid = process.Id });
                 }
                 catch (Exception ex)
                 {
-                    return new WindowsHelperActionResponse { Success = false, Error = ex.Message };
+                    var response = new WindowsHelperActionResponse { Success = false, Error = ex.Message };
+                    lastKnownPid = null;
+                    lastKnownExitCode = null;
+                    lastKnownError = response.Error;
+                    return ReturnStartResult(response);
                 }
             }
         }
@@ -269,6 +532,9 @@ public static class WindowsElevatedHelperHost
                 {
                     case "ping":
                         await WriteTextAsync(context.Response, HttpStatusCode.OK, token);
+                        break;
+                    case "status":
+                        await WriteProcessStatusAsync(context.Response, HttpStatusCode.OK, await GetProcessStatusAsync());
                         break;
                     case "start":
                     {
@@ -351,6 +617,18 @@ public static class WindowsElevatedHelperHost
 
         try
         {
+            startupWatchCts?.Cancel();
+            if (startupWatchTask != null)
+            {
+                await startupWatchTask;
+            }
+        }
+        catch
+        {
+        }
+
+        try
+        {
             if (parentWatchdogTask != null)
             {
                 await parentWatchdogTask;
@@ -361,7 +639,7 @@ public static class WindowsElevatedHelperHost
         }
     }
 
-    private static async Task PumpStreamAsync(StreamReader reader, StreamWriter writer)
+    private static async Task PumpStreamAsync(StreamReader reader, StreamWriter writer, Action<string>? onLine = null)
     {
         try
         {
@@ -373,6 +651,7 @@ public static class WindowsElevatedHelperHost
                     break;
                 }
 
+                onLine?.Invoke(line);
                 lock (writer)
                 {
                     writer.WriteLine(line);
@@ -382,6 +661,129 @@ public static class WindowsElevatedHelperHost
         catch
         {
         }
+    }
+
+    private static async Task WatchStartupExitAsync(
+        Process process,
+        Func<string?> getRecentLog,
+        Action<int, string?> onExited,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(35);
+            while (DateTime.UtcNow < deadline)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (process.HasExited)
+                {
+                    await Task.Delay(150, cancellationToken);
+                    var recentLog = getRecentLog();
+                    onExited(process.ExitCode, recentLog);
+                    return;
+                }
+
+                await Task.Delay(200, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch
+        {
+        }
+    }
+
+    private static string? TryReadRecentLog(string path, int maxLines)
+    {
+        try
+        {
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
+            var lines = File.ReadAllLines(path);
+            if (lines.Length == 0)
+            {
+                return null;
+            }
+
+            var slice = lines.Skip(Math.Max(0, lines.Length - maxLines));
+            return string.Join(" | ", slice
+                .Select(StripTerminalDecorations)
+                .Where(line => !string.IsNullOrWhiteSpace(line))
+                .Select(line => line.Trim()));
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string StripTerminalDecorations(string? message)
+    {
+        if (string.IsNullOrEmpty(message))
+        {
+            return string.Empty;
+        }
+
+        var builder = new StringBuilder(message.Length);
+        for (var i = 0; i < message.Length; i++)
+        {
+            var ch = message[i];
+            if (ch == '\u001b' && i + 1 < message.Length && message[i + 1] == '[')
+            {
+                var endIndex = FindCsiTerminator(message, i + 2);
+                if (endIndex >= 0)
+                {
+                    i = endIndex;
+                    continue;
+                }
+            }
+
+            if (ch == '[' && i + 1 < message.Length && IsCsiParameterChar(message[i + 1]))
+            {
+                var endIndex = FindCsiTerminator(message, i + 1);
+                if (endIndex >= 0)
+                {
+                    i = endIndex;
+                    continue;
+                }
+            }
+
+            if (!char.IsControl(ch) || ch is '\r' or '\n' or '\t')
+            {
+                builder.Append(ch);
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    private static int FindCsiTerminator(string message, int startIndex)
+    {
+        for (var i = startIndex; i < message.Length; i++)
+        {
+            var ch = message[i];
+            if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z'))
+            {
+                return i;
+            }
+
+            if (!IsCsiParameterChar(ch))
+            {
+                return -1;
+            }
+        }
+
+        return -1;
+    }
+
+    private static bool IsCsiParameterChar(char ch)
+    {
+        return (ch >= '0' && ch <= '9') || ch == ';';
     }
 
     private static async Task WriteTextAsync(HttpListenerResponse response, HttpStatusCode statusCode, string text)
@@ -399,5 +801,49 @@ public static class WindowsElevatedHelperHost
         await using var writer = new Utf8JsonWriter(response.OutputStream);
         JsonSerializer.Serialize(writer, payload, CartonCoreJsonContext.Default.WindowsHelperActionResponse);
         await writer.FlushAsync();
+    }
+
+    private static async Task WriteProcessStatusAsync(
+        HttpListenerResponse response,
+        HttpStatusCode statusCode,
+        WindowsHelperProcessStatusResponse payload)
+    {
+        response.StatusCode = (int)statusCode;
+        response.ContentType = "application/json; charset=utf-8";
+        await using var writer = new Utf8JsonWriter(response.OutputStream);
+        JsonSerializer.Serialize(writer, payload, CartonCoreJsonContext.Default.WindowsHelperProcessStatusResponse);
+        await writer.FlushAsync();
+    }
+
+    private static async Task<bool> IsApiReadyAsync(string? apiAddress, string? apiSecret)
+    {
+        if (string.IsNullOrWhiteSpace(apiAddress))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+            if (!string.IsNullOrWhiteSpace(apiSecret))
+            {
+                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiSecret);
+            }
+
+            using var response = await client.GetAsync($"{apiAddress.TrimEnd('/')}/version");
+            if (response.IsSuccessStatusCode)
+            {
+                return true;
+            }
+
+            return response.StatusCode is HttpStatusCode.NotFound
+                or HttpStatusCode.Unauthorized
+                or HttpStatusCode.Forbidden
+                or HttpStatusCode.MethodNotAllowed;
+        }
+        catch
+        {
+            return false;
+        }
     }
 }

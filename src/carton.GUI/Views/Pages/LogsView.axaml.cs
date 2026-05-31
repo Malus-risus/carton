@@ -359,6 +359,7 @@ public partial class LogsView : UserControl
 
 public sealed class LogLevelBrushConverter : IValueConverter
 {
+    private static readonly SolidColorBrush FatalBrush = new(Color.FromRgb(181, 28, 41));
     private static readonly SolidColorBrush ErrorBrush = new(Color.FromRgb(231, 72, 86));
     private static readonly SolidColorBrush WarnBrush = new(Color.FromRgb(249, 168, 37));
     private static readonly SolidColorBrush InfoBrush = new(Color.FromRgb(0, 120, 212));
@@ -369,6 +370,7 @@ public sealed class LogLevelBrushConverter : IValueConverter
     {
         return (value as string)?.ToUpperInvariant() switch
         {
+            "FATAL" => FatalBrush,
             "ERROR" => ErrorBrush,
             "WARN" or "WARNING" => WarnBrush,
             "INFO" => InfoBrush,

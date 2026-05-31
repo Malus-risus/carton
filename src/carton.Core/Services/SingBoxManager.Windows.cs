@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
@@ -12,9 +13,9 @@ namespace carton.Core.Services;
 public partial class SingBoxManager
 {
     private const int WindowsElevatedHelperPort = 47891;
-    private const string WindowsElevatedHelperArg = "--carton-elevated-helper";
     private const string WindowsElevatedHelperTokenHeader = "X-Carton-Helper-Token";
 
+    [SupportedOSPlatform("windows")]
     private async Task<ElevatedStartResult> StartElevatedOnWindowsAsync(string configPath, string logPath)
     {
         if (!await EnsureWindowsElevatedHelperRunningAsync())
@@ -28,41 +29,98 @@ public partial class SingBoxManager
 
         try
         {
+            var resultFilePath = GetWindowsHelperStartResultFilePath("result");
             var request = new WindowsHelperStartRequest
             {
                 SingBoxPath = _singBoxPath,
                 ConfigPath = configPath,
                 WorkingDirectory = _workingDirectory,
-                LogPath = logPath
+                LogPath = logPath,
+                ResultFilePath = resultFilePath,
+                ApiAddress = _apiAddress,
+                ApiSecret = HttpClientFactory.LocalApiSecret
             };
 
             var json = JsonSerializer.Serialize(request, CartonCoreJsonContext.Default.WindowsHelperStartRequest);
 
-            int? pid = null;
+            LogManager("[INFO] Sending start request to elevated helper...");
+            using var sendClient = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            using var message = new HttpRequestMessage(HttpMethod.Post, GetWindowsHelperUri("start"))
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
+            };
+            message.Headers.Add(WindowsElevatedHelperTokenHeader, _windowsElevatedHelperToken!);
+
             try
             {
-                LogManager("[INFO] Sending start request to elevated helper...");
-                using var sendClient = new HttpClient();
-                using var message = new HttpRequestMessage(HttpMethod.Post, GetWindowsHelperUri("start"))
-                {
-                    Content = new StringContent(json, Encoding.UTF8, "application/json")
-                };
-                message.Headers.Add(WindowsElevatedHelperTokenHeader, _windowsElevatedHelperToken!);
+                var sendTask = sendClient.SendAsync(message);
 
-                // Fire the request - don't wait for response (TUN will likely block it)
-                _ = sendClient.SendAsync(message);
-                // Brief delay to let the helper receive and process the request
-                await Task.Delay(1000);
+                var resultFromFile = await WaitForWindowsHelperStartResultAsync(
+                    resultFilePath,
+                    TimeSpan.FromMilliseconds(1200));
+                if (resultFromFile != null)
+                {
+                    return new ElevatedStartResult
+                    {
+                        Success = resultFromFile.Success,
+                        Pid = resultFromFile.Pid,
+                        ErrorMessage = resultFromFile.Error
+                    };
+                }
+
+                if (await Task.WhenAny(sendTask, Task.Delay(300)) == sendTask)
+                {
+                    using var response = await sendTask;
+                    var payload = (await response.Content.ReadAsStringAsync()).Trim();
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        return new ElevatedStartResult
+                        {
+                            Success = false,
+                            ErrorMessage = string.IsNullOrWhiteSpace(payload)
+                                ? $"Elevated helper start request failed with status {(int)response.StatusCode}"
+                                : payload
+                        };
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(payload))
+                    {
+                        try
+                        {
+                            var result = JsonSerializer.Deserialize(
+                                payload,
+                                CartonCoreJsonContext.Default.WindowsHelperActionResponse);
+                            if (result != null)
+                            {
+                                return new ElevatedStartResult
+                                {
+                                    Success = result.Success,
+                                    Pid = result.Pid,
+                                    ErrorMessage = result.Error
+                                };
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            LogManager($"[WARN] Failed to parse elevated helper response: {ex.Message}");
+                        }
+                    }
+                }
+
+                LogManager("[INFO] Elevated helper did not send an immediate start confirmation, proceeding with API readiness check");
+            }
+            catch (TaskCanceledException)
+            {
+                LogManager("[WARN] Timed out waiting for elevated helper start response, proceeding with API readiness check");
             }
             catch (Exception ex)
             {
-                LogManager($"[WARN] Failed to send start request: {ex.Message}");
+                LogManager($"[WARN] Failed to read immediate elevated helper start response: {ex.Message}");
             }
 
             return new ElevatedStartResult
             {
-                Success = true,
-                Pid = pid
+                Success = true
             };
         }
         catch (Exception ex)
@@ -113,6 +171,7 @@ public partial class SingBoxManager
         return $"http://127.0.0.1:{WindowsElevatedHelperPort}/{path}";
     }
 
+    [SupportedOSPlatform("windows")]
     private async Task<bool> EnsureWindowsElevatedHelperRunningAsync()
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -135,18 +194,12 @@ public partial class SingBoxManager
 
         var token = Guid.NewGuid().ToString("N");
         var parentPid = Environment.ProcessId;
-        var helperArgs =
-            $"{WindowsElevatedHelperArg} --port {WindowsElevatedHelperPort} --token {token} --parent-pid {parentPid}";
-        var script =
-            "$p = Start-Process -FilePath " +
-            $"'{EscapeForPowerShellSingleQuoted(executablePath)}' " +
-            "-ArgumentList " +
-            $"'{EscapeForPowerShellSingleQuoted(helperArgs)}' " +
-            $"-WorkingDirectory '{EscapeForPowerShellSingleQuoted(_workingDirectory)}' " +
-            "-Verb RunAs -WindowStyle Hidden -PassThru; " +
-            "$p.Id";
+        if (await TryStartWindowsElevatedHelperViaScheduledTaskAsync(executablePath, token, parentPid))
+        {
+            return true;
+        }
 
-        var result = await RunWindowsUacCommandAsync(script);
+        var result = await StartWindowsElevatedHelperViaRunAsAsync(executablePath, token, parentPid);
         if (!result.Success)
         {
             LogManager($"[ERROR] {result.ErrorMessage ?? "Failed to start elevated helper"}");
@@ -158,6 +211,188 @@ public partial class SingBoxManager
             _windowsElevatedHelperPid = helperPid;
         }
 
+        return await WaitForWindowsElevatedHelperAsync(token);
+    }
+
+    [SupportedOSPlatform("windows")]
+    private async Task<ElevatedStartResult> StartWindowsElevatedHelperViaRunAsAsync(
+        string executablePath,
+        string token,
+        int parentPid)
+    {
+        var helperArgs =
+            $"{WindowsElevatedHelperTaskUtility.HelperArg} --port {WindowsElevatedHelperPort} --token {token} --parent-pid {parentPid}";
+        var script =
+            "$p = Start-Process -FilePath " +
+            $"'{EscapeForPowerShellSingleQuoted(executablePath)}' " +
+            "-ArgumentList " +
+            $"'{EscapeForPowerShellSingleQuoted(helperArgs)}' " +
+            $"-WorkingDirectory '{EscapeForPowerShellSingleQuoted(_workingDirectory)}' " +
+            "-Verb RunAs -WindowStyle Hidden -PassThru; " +
+            "$p.Id";
+
+        return await RunWindowsUacCommandAsync(script);
+    }
+
+    [SupportedOSPlatform("windows")]
+    private async Task<bool> TryStartWindowsElevatedHelperViaScheduledTaskAsync(
+        string executablePath,
+        string token,
+        int parentPid)
+    {
+        try
+        {
+            var requestFilePath = WindowsElevatedHelperTaskUtility.GetRequestFilePath(_workingDirectory);
+            var hasCurrentRegistration = await WindowsElevatedHelperTaskUtility.IsRegistrationCurrentAsync(
+                _workingDirectory,
+                executablePath);
+            if (!hasCurrentRegistration)
+            {
+                LogManager("[INFO] Elevated helper scheduled task is missing or stale, repairing registration");
+                var registrationResult = await WindowsElevatedHelperTaskUtility.EnsureRegisteredAsync(
+                    _workingDirectory,
+                    executablePath);
+                if (!registrationResult.Success)
+                {
+                    if (registrationResult.Cancelled)
+                    {
+                        LogManager("[INFO] Elevated helper scheduled task registration was canceled");
+                    }
+                    else
+                    {
+                        LogManager(
+                            $"[WARN] Failed to repair elevated helper scheduled task: {registrationResult.ErrorMessage}");
+                    }
+                    TryDeleteFile(requestFilePath);
+                    return false;
+                }
+            }
+
+            if (!await WriteWindowsElevatedHelperLaunchRequestAsync(requestFilePath, token, parentPid))
+            {
+                return false;
+            }
+
+            if (await WindowsElevatedHelperTaskUtility.RunTaskAsync() &&
+                await WaitForWindowsElevatedHelperAsync(token))
+            {
+                return true;
+            }
+
+            LogManager("[WARN] Scheduled task launch did not start a ready helper, re-registering task and retrying");
+            var retryRegistrationResult = await WindowsElevatedHelperTaskUtility.EnsureRegisteredAsync(
+                _workingDirectory,
+                executablePath);
+            if (!retryRegistrationResult.Success)
+            {
+                if (retryRegistrationResult.Cancelled)
+                {
+                    LogManager("[INFO] Elevated helper scheduled task re-registration was canceled");
+                }
+                else
+                {
+                    LogManager(
+                        $"[WARN] Failed to re-register elevated helper scheduled task: {retryRegistrationResult.ErrorMessage}");
+                }
+                TryDeleteFile(requestFilePath);
+                return false;
+            }
+
+            if (!await WriteWindowsElevatedHelperLaunchRequestAsync(requestFilePath, token, parentPid))
+            {
+                return false;
+            }
+
+            if (await WindowsElevatedHelperTaskUtility.RunTaskAsync() &&
+                await WaitForWindowsElevatedHelperAsync(token))
+            {
+                return true;
+            }
+
+            LogManager("[WARN] Scheduled task launched but elevated helper did not become ready after re-registration");
+            TryDeleteFile(requestFilePath);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            LogManager($"[WARN] Failed to start elevated helper via scheduled task: {ex.Message}");
+            return false;
+        }
+    }
+
+    private string GetWindowsHelperStartResultFilePath(string kind)
+    {
+        return Path.Combine(
+            _workingDirectory,
+            "cache",
+            $"windows-elevated-helper-start-{kind}-{Guid.NewGuid():N}.json");
+    }
+
+    private async Task<WindowsHelperActionResponse?> WaitForWindowsHelperStartResultAsync(
+        string resultFilePath,
+        TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            try
+            {
+                if (File.Exists(resultFilePath))
+                {
+                    var payload = await File.ReadAllTextAsync(resultFilePath);
+                    TryDeleteFile(resultFilePath);
+                    if (string.IsNullOrWhiteSpace(payload))
+                    {
+                        return null;
+                    }
+
+                    return JsonSerializer.Deserialize(
+                        payload,
+                        CartonCoreJsonContext.Default.WindowsHelperActionResponse);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogManager($"[WARN] Failed to read elevated helper start result: {ex.Message}");
+                break;
+            }
+
+            await Task.Delay(50);
+        }
+
+        TryDeleteFile(resultFilePath);
+        return null;
+    }
+
+    private async Task<bool> WriteWindowsElevatedHelperLaunchRequestAsync(string requestFilePath, string token, int parentPid)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(requestFilePath)!);
+            var launchRequest = new WindowsHelperLaunchRequest
+            {
+                Port = WindowsElevatedHelperPort,
+                Token = token,
+                ParentPid = parentPid,
+                RequestedAtUtc = DateTimeOffset.UtcNow,
+                ExpiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(2)
+            };
+
+            var payload = JsonSerializer.Serialize(
+                launchRequest,
+                CartonCoreJsonContext.Default.WindowsHelperLaunchRequest);
+            await File.WriteAllTextAsync(requestFilePath, payload, new UTF8Encoding(false));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            LogManager($"[WARN] Failed to write elevated helper request file: {ex.Message}");
+            return false;
+        }
+    }
+
+    private async Task<bool> WaitForWindowsElevatedHelperAsync(string token)
+    {
         for (var i = 0; i < 30; i++)
         {
             if (await PingWindowsElevatedHelperAsync(token))
@@ -342,6 +577,51 @@ public partial class SingBoxManager
     private static string EscapeForPowerShellSingleQuoted(string value)
     {
         return value.Replace("'", "''");
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task<WindowsHelperProcessStatusResponse?> TryGetWindowsHelperProcessStatusAsync()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ||
+            string.IsNullOrWhiteSpace(_windowsElevatedHelperToken))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            using var message = new HttpRequestMessage(HttpMethod.Get, GetWindowsHelperUri("status"));
+            message.Headers.Add(WindowsElevatedHelperTokenHeader, _windowsElevatedHelperToken);
+            using var response = await _httpClient.SendAsync(message, cts.Token);
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            await using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+            return await JsonSerializer.DeserializeAsync(
+                stream,
+                CartonCoreJsonContext.Default.WindowsHelperProcessStatusResponse,
+                cts.Token);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private void TryInitializeWindowsProcessJob()

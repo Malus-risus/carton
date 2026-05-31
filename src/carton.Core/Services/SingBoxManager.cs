@@ -63,6 +63,7 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
     private IntPtr _windowsJobHandle = IntPtr.Zero;
     private string? _windowsElevatedHelperToken;
     private int? _windowsElevatedHelperPid;
+    private string? _lastStartupWaitFailureReason;
     /// <summary>Whether the current/last session had system-proxy enabled.</summary>
     private bool _systemProxyEnabled;
 

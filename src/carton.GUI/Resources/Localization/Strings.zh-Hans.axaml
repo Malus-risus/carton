@@ -353,4 +353,10 @@
 	<x:String x:Key="Profiles.Status.UpdateFailed">更新失败</x:String>
 	<x:String x:Key="Profiles.Status.ProfileNotFound">配置不存在</x:String>	<x:String x:Key="Settings.Kernel.CacheCleanupPolicy">缓存清理</x:String>
 	<x:String x:Key="Settings.Kernel.CacheCleanupPolicy.ClearOnChannelChange">仅非同渠道更换时清理</x:String>
-	<x:String x:Key="Settings.Kernel.CacheCleanupPolicy.Never">任何时候都不清理</x:String></ResourceDictionary>
+	<x:String x:Key="Settings.Kernel.CacheCleanupPolicy.Never">任何时候都不清理</x:String>
+	<x:String x:Key="Settings.General.ElevatedTask.Title">管理员启动任务</x:String>
+	<x:String x:Key="Settings.General.ElevatedTask.Description">重新创建用于启动提权助手的 Windows 计划任务，避免每次使用虚拟网卡都重复弹出 UAC。</x:String>
+	<x:String x:Key="Settings.General.ElevatedTask.Action">修复任务</x:String>
+	<x:String x:Key="Settings.General.ElevatedTask.Repaired">管理员启动任务已修复。</x:String>
+	<x:String x:Key="Settings.General.ElevatedTask.Cancelled">已取消修复管理员启动任务。</x:String>
+	<x:String x:Key="Settings.General.ElevatedTask.Failed">修复管理员启动任务失败</x:String></ResourceDictionary>

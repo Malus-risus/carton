@@ -233,6 +233,12 @@
 	<x:String x:Key="Settings.General.UwpLoopback.Missing">EnableLoopback.exe was not found in the application directory.</x:String>
 	<x:String x:Key="Settings.General.UwpLoopback.Cancelled">Loopback tool launch was canceled.</x:String>
 	<x:String x:Key="Settings.General.UwpLoopback.Failed">Failed to launch loopback tool</x:String>
+	<x:String x:Key="Settings.General.ElevatedTask.Title">Admin Startup Task</x:String>
+	<x:String x:Key="Settings.General.ElevatedTask.Description">Recreate the Windows scheduled task used to start the elevated helper without repeated UAC prompts.</x:String>
+	<x:String x:Key="Settings.General.ElevatedTask.Action">Repair Task</x:String>
+	<x:String x:Key="Settings.General.ElevatedTask.Repaired">Admin startup task repaired.</x:String>
+	<x:String x:Key="Settings.General.ElevatedTask.Cancelled">Admin startup task repair was canceled.</x:String>
+	<x:String x:Key="Settings.General.ElevatedTask.Failed">Failed to repair admin startup task</x:String>
 
 	<x:String x:Key="Settings.Section.Update">Updates</x:String>
 	<x:String x:Key="Settings.Update.Channel">Channel</x:String>

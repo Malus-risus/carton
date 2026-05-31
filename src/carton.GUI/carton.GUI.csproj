@@ -35,6 +35,12 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+		<Compile Remove="obj\**\*.cs;bin\**\*.cs;obj-codex\**\*.cs" />
+		<EmbeddedResource Remove="obj\**;bin\**;obj-codex\**" />
+		<None Remove="obj\**;bin\**;obj-codex\**" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="3" />
 		<Folder Include="Models\" />
 		<AvaloniaResource Include="Assets\**"

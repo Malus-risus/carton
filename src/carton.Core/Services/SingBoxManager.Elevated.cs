@@ -55,6 +55,11 @@ public partial class SingBoxManager
             if (!result.Success)
             {
                 var msg = string.IsNullOrWhiteSpace(result.ErrorMessage) ? "Elevated start failed" : result.ErrorMessage;
+                var recentLog = await ReadRecentLogLinesAsync(elevatedLogPath, 20);
+                if (!string.IsNullOrWhiteSpace(recentLog))
+                {
+                    msg = $"{msg}: {recentLog}";
+                }
                 LogManager($"[ERROR] {msg}");
                 SetError(msg);
                 return false;
@@ -75,12 +80,19 @@ public partial class SingBoxManager
             _elevatedLogPath = elevatedLogPath;
             StartElevatedLogTail(elevatedLogPath);
 
-            var ready = await WaitForApiReadyAsync(pid, TimeSpan.FromSeconds(30));
+            var ready = await WaitForApiReadyAsync(
+                pid,
+                TimeSpan.FromSeconds(30));
             if (!ready)
             {
                 var recentLog = await ReadRecentLogLinesAsync(elevatedLogPath, 20);
-                var msg = "sing-box API did not become reachable in time" +
-                          (string.IsNullOrWhiteSpace(recentLog) ? string.Empty : $": {recentLog}");
+                var msg = string.IsNullOrWhiteSpace(_lastStartupWaitFailureReason)
+                    ? "sing-box API did not become reachable in time"
+                    : _lastStartupWaitFailureReason;
+                if (!string.IsNullOrWhiteSpace(recentLog))
+                {
+                    msg = $"{msg}: {recentLog}";
+                }
                 LogManager($"[ERROR] {msg}");
                 await CleanupFailedStartAttemptAsync();
                 SetError(msg);
@@ -173,14 +185,61 @@ public partial class SingBoxManager
         return true;
     }
 
-    private async Task<bool> WaitForApiReadyAsync(int? elevatedPid, TimeSpan timeout)
+    private async Task<bool> WaitForApiReadyAsync(
+        int? elevatedPid,
+        TimeSpan timeout)
     {
+        _lastStartupWaitFailureReason = null;
         var start = DateTime.UtcNow;
+        var noProcessStatusCount = 0;
         LogManager($"[INFO] Waiting for sing-box API to become ready (timeout={timeout.TotalSeconds}s)...");
         var attempt = 0;
         while (DateTime.UtcNow - start < timeout)
         {
             attempt++;
+
+            var helperProcessStatus = await TryGetWindowsHelperProcessStatusAsync();
+            if (helperProcessStatus != null)
+            {
+                if ((!elevatedPid.HasValue || elevatedPid.Value <= 0) && helperProcessStatus.Pid is > 0)
+                {
+                    elevatedPid = helperProcessStatus.Pid;
+                    _elevatedPid = helperProcessStatus.Pid;
+                    LogManager($"[INFO] Learned elevated process PID from helper status endpoint: {helperProcessStatus.Pid}");
+                }
+
+                if (helperProcessStatus.HasProcess && !helperProcessStatus.IsRunning)
+                {
+                    _lastStartupWaitFailureReason = string.IsNullOrWhiteSpace(helperProcessStatus.Error)
+                        ? helperProcessStatus.ExitCode.HasValue
+                            ? $"sing-box exited with code {helperProcessStatus.ExitCode.Value} before API became ready"
+                            : "sing-box exited before API became ready"
+                        : helperProcessStatus.Error;
+                    LogManager($"[WARN] Elevated helper reported exited process before API ready: {_lastStartupWaitFailureReason}");
+                    return false;
+                }
+
+                if (helperProcessStatus.ApiReady)
+                {
+                    return true;
+                }
+
+                if (!helperProcessStatus.HasProcess)
+                {
+                    noProcessStatusCount++;
+                    if (DateTime.UtcNow - start > TimeSpan.FromSeconds(3) && noProcessStatusCount >= 3)
+                    {
+                        _lastStartupWaitFailureReason = "Elevated helper has no active sing-box process after startup request";
+                        LogManager($"[WARN] {_lastStartupWaitFailureReason}");
+                        return false;
+                    }
+                }
+                else
+                {
+                    noProcessStatusCount = 0;
+                }
+            }
+
             try
             {
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
@@ -197,7 +256,6 @@ public partial class SingBoxManager
                         _elevatedPid = discoveredPid.Value;
                     }
                 }
-
                 return true;
             }
             catch
@@ -209,6 +267,7 @@ public partial class SingBoxManager
             if (_process != null && _process.HasExited)
             {
                 LogManager("[WARN] Process exited while waiting for API");
+                _lastStartupWaitFailureReason = "sing-box exited while waiting for API";
                 return false;
             }
 
@@ -221,12 +280,16 @@ public partial class SingBoxManager
                     if (proc.HasExited)
                     {
                         LogManager($"[WARN] Elevated process {elevatedPid.Value} exited while waiting for API");
+                        _lastStartupWaitFailureReason =
+                            $"sing-box process {elevatedPid.Value} exited before API became ready";
                         return false;
                     }
                 }
                 catch
                 {
                     LogManager($"[WARN] Elevated process {elevatedPid.Value} not found while waiting for API");
+                    _lastStartupWaitFailureReason =
+                        $"sing-box process {elevatedPid.Value} was not found before API became ready";
                     return false;
                 }
             }
@@ -235,6 +298,7 @@ public partial class SingBoxManager
         }
 
         LogManager($"[WARN] API did not become ready within {timeout.TotalSeconds}s");
+        _lastStartupWaitFailureReason = "sing-box API did not become reachable in time";
         return false;
     }
 
