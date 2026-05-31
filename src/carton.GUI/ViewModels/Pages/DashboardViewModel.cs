@@ -157,20 +157,10 @@ public partial class DashboardViewModel : PageViewModelBase
     }
 
     [RelayCommand]
-    private void ToggleInboundAccess()
-    {
-        if (!ShowStartupSelector)
-        {
-            return;
-        }
+    private void SelectLocalOnly() => SetInboundAccessScope(allowLan: false);
 
-        AllowLanConnections = !AllowLanConnections;
-        var message = AllowLanConnections
-            ? GetString("Dashboard.Port.Scope.EnabledStatus", "LAN access enabled")
-            : GetString("Dashboard.Port.Scope.DisabledStatus", "Switched to local only");
-        ShowTransientStatus(message);
-        LogInfo($"Inbound access scope changed: lan={AllowLanConnections}");
-    }
+    [RelayCommand]
+    private void SelectLanAccess() => SetInboundAccessScope(allowLan: true);
 
     [RelayCommand]
     private async Task ResetRuntimeOptionsToConfig()
@@ -263,6 +253,43 @@ public partial class DashboardViewModel : PageViewModelBase
         }
     }
 
+    private void SetInboundAccessScope(bool allowLan)
+    {
+        if (!ShowStartupSelector || AllowLanConnections == allowLan)
+        {
+            return;
+        }
+
+        AllowLanConnections = allowLan;
+        var message = allowLan
+            ? GetString("Dashboard.Port.Scope.EnabledStatus", "LAN access enabled")
+            : GetString("Dashboard.Port.Scope.DisabledStatus", "Switched to local only");
+        ShowTransientStatus(message);
+        LogInfo($"Inbound access scope changed: lan={AllowLanConnections}");
+    }
+
+    private string BuildInboundAccessOptionToolTip(bool allowLan)
+    {
+        var description = allowLan
+            ? GetString("Dashboard.Port.Scope.Lan.ToolTip", "Listening on 0.0.0.0. Devices on your LAN can connect.")
+            : GetString("Dashboard.Port.Scope.LocalOnly.ToolTip", "Listening on 127.0.0.1. Only this device can connect.");
+
+        if (!ShowStartupSelector)
+        {
+            return $"{description}{Environment.NewLine}{GetString("Dashboard.Port.Scope.Locked.ToolTip", "Stop the kernel before changing the listening scope.")}";
+        }
+
+        if (AllowLanConnections == allowLan)
+        {
+            return description;
+        }
+
+        var action = allowLan
+            ? GetString("Dashboard.Port.Scope.ToggleToLan.ToolTip", "Click to allow devices on your LAN.")
+            : GetString("Dashboard.Port.Scope.ToggleToLocal.ToolTip", "Click to switch to local only.");
+        return $"{description}{Environment.NewLine}{action}";
+    }
+
     [RelayCommand]
     private void OpenWebUi()
     {
@@ -291,19 +318,10 @@ public partial class DashboardViewModel : PageViewModelBase
     [ObservableProperty]
     private bool _allowLanConnections;
 
-    public string InboundAccessBadgeText => AllowLanConnections
-        ? GetString("Dashboard.Port.Scope.Lan", "LAN")
-        : GetString("Dashboard.Port.Scope.LocalOnly", "Local Only");
-
-    public string InboundAccessToolTip => AllowLanConnections
-        ? GetString("Dashboard.Port.Scope.Lan.ToolTip", "Listening on 0.0.0.0. Devices on your LAN can connect.")
-        : GetString("Dashboard.Port.Scope.LocalOnly.ToolTip", "Listening on 127.0.0.1. Only this device can connect.");
-
-    public string InboundAccessActionToolTip => ShowStartupSelector
-        ? $"{InboundAccessToolTip}{Environment.NewLine}{(AllowLanConnections
-            ? GetString("Dashboard.Port.Scope.ToggleToLocal.ToolTip", "Click to switch to local only.")
-            : GetString("Dashboard.Port.Scope.ToggleToLan.ToolTip", "Click to allow devices on your LAN."))}"
-        : $"{InboundAccessToolTip}{Environment.NewLine}{GetString("Dashboard.Port.Scope.Locked.ToolTip", "Stop the kernel before changing the listening scope.")}";
+    public bool IsLocalOnlySelected => !AllowLanConnections;
+    public bool IsLanAccessSelected => AllowLanConnections;
+    public string LocalOnlyAccessToolTip => BuildInboundAccessOptionToolTip(allowLan: false);
+    public string LanAccessToolTip => BuildInboundAccessOptionToolTip(allowLan: true);
 
     [ObservableProperty]
     private bool _enableSystemProxy;
@@ -317,9 +335,10 @@ public partial class DashboardViewModel : PageViewModelBase
     partial void OnAllowLanConnectionsChanged(bool value)
     {
         UpdateRuntimeOptions(options => options.AllowLanConnections = value);
-        OnPropertyChanged(nameof(InboundAccessBadgeText));
-        OnPropertyChanged(nameof(InboundAccessToolTip));
-        OnPropertyChanged(nameof(InboundAccessActionToolTip));
+        OnPropertyChanged(nameof(IsLocalOnlySelected));
+        OnPropertyChanged(nameof(IsLanAccessSelected));
+        OnPropertyChanged(nameof(LocalOnlyAccessToolTip));
+        OnPropertyChanged(nameof(LanAccessToolTip));
     }
     partial void OnEnableSystemProxyChanged(bool value)
     {
@@ -367,7 +386,8 @@ public partial class DashboardViewModel : PageViewModelBase
         OnPropertyChanged(nameof(HasSelectedProfile));
         OnPropertyChanged(nameof(CanToggleConnection));
         OnPropertyChanged(nameof(ConnectionToggleToolTip));
-        OnPropertyChanged(nameof(InboundAccessActionToolTip));
+        OnPropertyChanged(nameof(LocalOnlyAccessToolTip));
+        OnPropertyChanged(nameof(LanAccessToolTip));
     }
 
     public DashboardViewModel()
@@ -380,9 +400,8 @@ public partial class DashboardViewModel : PageViewModelBase
         _localizationService.LanguageChanged += (_, _) =>
         {
             OnPropertyChanged(nameof(ConnectionToggleToolTip));
-            OnPropertyChanged(nameof(InboundAccessBadgeText));
-            OnPropertyChanged(nameof(InboundAccessToolTip));
-            OnPropertyChanged(nameof(InboundAccessActionToolTip));
+            OnPropertyChanged(nameof(LocalOnlyAccessToolTip));
+            OnPropertyChanged(nameof(LanAccessToolTip));
             _ = RefreshKernelVersionAsync();
         };
         _ = RefreshKernelVersionAsync();
