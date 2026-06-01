@@ -95,7 +95,7 @@ This is intentional because many users strongly dislike third-party GUIs overwri
 
 - `.NET 10 SDK`
 - Windows NativeAOT publishing requires `Desktop development with C++` or an equivalent MSVC / Windows SDK toolchain
-- If you want to generate the installer, `Velopack CLI (vpk)` is also required; `scripts\build-release-win-x64.ps1` will try to install or update it automatically
+- If you want to generate the Windows installer, `NSIS` is also required and `makensis` must be available; GitHub Actions installs NSIS automatically
 
 ### Local build
 
@@ -124,7 +124,7 @@ scripts\build-release-win-x64.bat
 In practice:
 
 - `scripts\test-publish-win-aot.bat` performs the NativeAOT publish only
-- `scripts\build-release-win-x64.bat` runs `scripts\build-release-win-x64.ps1` and additionally creates the portable archive and Velopack installer
+- `scripts\build-release-win-x64.bat` runs `scripts\build-release-win-x64.ps1` and additionally creates the portable archive and NSIS installer
 
 ### Linux NativeAOT publish
 

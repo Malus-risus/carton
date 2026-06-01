@@ -60,7 +60,15 @@ jobs:
             channel="${{ inputs.channel }}"
             tag="${{ inputs.tag }}"
             if [[ -z "$tag" ]]; then
-              tag="v${version}-${channel}"
+              shopt -s nocasematch
+              if [[ "$version" == *-beta* ]] || [[ "$version" == *-rc* ]] || [[ "$version" == *-preview* ]]; then
+                tag="v${version}"
+              elif [[ "$channel" == "beta" ]]; then
+                tag="v${version}-beta"
+              else
+                tag="v${version}"
+              fi
+              shopt -u nocasematch
             fi
           else
             tag="$ref_name"

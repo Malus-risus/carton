@@ -95,7 +95,7 @@
 
 - `.NET 10 SDK`
 - Windows NativeAOT 发布需要安装 `Desktop development with C++` 或等效的 MSVC / Windows SDK 构建工具链
-- 如需生成安装包，还需要 `Velopack CLI (vpk)`；`scripts\build-release-win-x64.ps1` 会尝试自动安装或更新它
+- 如需生成 Windows 安装包，还需要 `NSIS`，并确保 `makensis` 可用；GitHub Actions 会自动安装 NSIS
 
 ### 本地构建
 
@@ -124,7 +124,7 @@ scripts\build-release-win-x64.bat
 其中：
 
 - `scripts\test-publish-win-aot.bat` 只执行 NativeAOT 发布
-- `scripts\build-release-win-x64.bat` 会执行 `scripts\build-release-win-x64.ps1`，并额外生成便携压缩包和 Velopack 安装包
+- `scripts\build-release-win-x64.bat` 会执行 `scripts\build-release-win-x64.ps1`，并额外生成便携压缩包和 NSIS 安装包
 
 ### Linux NativeAOT 发布
 

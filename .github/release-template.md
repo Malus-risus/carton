@@ -43,3 +43,8 @@
 - Built-in sing-box kernel version: `__SINGBOX_VERSION__`
 - You can update and replace the bundled kernel inside the app (`Settings -> Kernel`).
 - `.nupkg` and `releases*.json` are for auto-update and usually do not need to be downloaded manually.
+
+**Windows Installer Compatibility**
+
+- 中文：从 `0.3.0` 开始，Windows 安装包切换了安装架构，不兼容从 `0.3.0` 之前的 Windows 安装版直接升级。请先卸载旧版安装包后再安装新版；便携版、Linux 版本及其他使用方式不受影响，没有变化。
+- English: Starting with `0.3.0`, the Windows installer uses a new installation architecture and cannot upgrade directly from Windows installer builds earlier than `0.3.0`. Please uninstall the old installer build before installing the new one. Portable builds, Linux builds, and other usage modes are not affected and remain unchanged.
