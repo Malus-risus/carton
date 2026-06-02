@@ -38,7 +38,7 @@
     </Border>
 
     <ScrollViewer Grid.Row="2"
-                  Background="{DynamicResource CartonControlBackgroundChromeMediumBrush}">
+                  Background="{DynamicResource CartonControlBackgroundChromeMediumLowBrush}">
       <ItemsControl Margin="16,8,16,12"
                     ItemsSource="{Binding Groups}">
         <ItemsControl.ItemTemplate>
@@ -53,7 +53,7 @@
               <Border.Styles>
                 <Style Selector="Border">
                   <Setter Property="Background" Value="{DynamicResource CartonControlBackgroundAltHighBrush}"/>
-                  <Setter Property="BorderBrush" Value="{DynamicResource CartonControlForegroundBaseMediumLowBrush}"/>
+                  <Setter Property="BorderBrush" Value="{DynamicResource CartonSettingsItemBorderBrush}"/>
                 </Style>
                 <Style Selector="Border.expanded">
                   <Setter Property="Background" Value="{DynamicResource CartonControlBackgroundChromeHighBrush}"/>
