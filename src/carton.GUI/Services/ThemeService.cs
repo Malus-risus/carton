@@ -26,6 +26,7 @@ public sealed class ThemeService : IThemeService
     public static ThemeService Instance => _instance.Value;
 
     private bool _initialized;
+    private int _accentUpdateVersion;
 
     public AppTheme CurrentTheme { get; private set; } = AppTheme.System;
     public bool UseSystemThemeAccent { get; private set; }
@@ -75,6 +76,7 @@ public sealed class ThemeService : IThemeService
 
         var app = Application.Current ?? throw new InvalidOperationException("Application is not ready");
         var fluentTheme = app.Styles.OfType<FluentAvaloniaTheme>().FirstOrDefault();
+        var accentUpdateVersion = ++_accentUpdateVersion;
         if (fluentTheme != null)
         {
             if (useSystemThemeAccent)
@@ -96,7 +98,15 @@ public sealed class ThemeService : IThemeService
             // 先用当前能拿到的值更新一次避免空窗,再在下一周期读到真实系统色后二次更新。
             UpdateCartonAccentBrush(app, ResolveCurrentAccentColor(app, fluentTheme, normalizedAccent));
             Dispatcher.UIThread.Post(
-                () => UpdateCartonAccentBrush(app, ResolveCurrentAccentColor(app, fluentTheme, normalizedAccent)),
+                () =>
+                {
+                    if (!UseSystemThemeAccent || accentUpdateVersion != _accentUpdateVersion)
+                    {
+                        return;
+                    }
+
+                    UpdateCartonAccentBrush(app, ResolveCurrentAccentColor(app, fluentTheme, normalizedAccent));
+                },
                 DispatcherPriority.Background);
         }
         else

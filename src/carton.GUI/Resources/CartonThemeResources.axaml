@@ -3,7 +3,7 @@
   <Styles.Resources>
     <ResourceDictionary>
       <FontFamily x:Key="SymbolThemeFontFamily">avares://FluentAvalonia/Fonts#Symbols</FontFamily>
-      <SolidColorBrush x:Key="CartonAccentBrush" Color="#0078D4" />
+      <SolidColorBrush x:Key="CartonAccentBrush" Color="#0078D7" />
       <SolidColorBrush x:Key="CartonAccentForegroundBrush" Color="White" />
       <!-- 选中/展开态边框用的弱化强调色(70% alpha)。运行时由 ThemeService 跟随当前强调色更新,此处为首帧初值(默认强调色 #0078D7 的 70%) -->
       <SolidColorBrush x:Key="CartonAccentBorderBrush" Color="#B30078D7" />
