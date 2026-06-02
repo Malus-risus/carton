@@ -41,10 +41,8 @@
 
     <Style Selector="Border.portScopeTrack">
       <Setter Property="Background" Value="{DynamicResource CartonControlBackgroundBaseLowBrush}"/>
-      <Setter Property="BorderBrush" Value="{DynamicResource CartonControlForegroundBaseMediumLowBrush}"/>
-      <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="CornerRadius" Value="12"/>
-      <Setter Property="Padding" Value="3"/>
+      <Setter Property="CornerRadius" Value="14"/>
+      <Setter Property="Padding" Value="4"/>
       <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
 
@@ -52,8 +50,8 @@
       <Setter Property="Background" Value="Transparent"/>
       <Setter Property="Foreground" Value="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
       <Setter Property="BorderThickness" Value="0"/>
-      <Setter Property="Padding" Value="12,6"/>
-      <Setter Property="MinHeight" Value="30"/>
+      <Setter Property="Padding" Value="14,8"/>
+      <Setter Property="MinHeight" Value="32"/>
       <Setter Property="MinWidth" Value="64"/>
       <Setter Property="FontSize" Value="12"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
@@ -63,7 +61,7 @@
       <Setter Property="Template">
         <ControlTemplate>
           <Border Background="{TemplateBinding Background}"
-                  CornerRadius="9"
+                  CornerRadius="10"
                   Padding="{TemplateBinding Padding}">
             <ContentPresenter Content="{TemplateBinding Content}"
                               ContentTemplate="{TemplateBinding ContentTemplate}"
@@ -129,7 +127,9 @@
 
   <ScrollViewer>
     <StackPanel Margin="20" Spacing="16">
-      <Border Classes="card" Padding="20">
+      <Border Classes="card"
+              Padding="20"
+              IsEnabled="{Binding CanUseDashboardControls}">
         <StackPanel Spacing="14">
           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
             <TextBlock Grid.Column="0"

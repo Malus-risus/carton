@@ -139,7 +139,18 @@ public partial class SingBoxManager
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            // Use file-based signal to stop (bypasses TUN)
+            if (await TryStopViaWindowsElevatedHelperAsync(force: true))
+            {
+                await Task.Delay(250);
+                if (!IsProcessAlive(pid))
+                {
+                    return true;
+                }
+
+                LogManager($"[WARN] Elevated helper stop returned before sing-box process {pid} exited");
+            }
+
+            // Fallback to file-based signal if the helper endpoint is unavailable.
             WriteStopSignalFile();
         }
         else
@@ -148,9 +159,13 @@ public partial class SingBoxManager
         }
 
         // Wait for process to exit
-        for (var i = 0; i < 20; i++)
+        var waitAttempts = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? 8 : 20;
+        var waitDelay = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? TimeSpan.FromMilliseconds(250)
+            : TimeSpan.FromMilliseconds(500);
+        for (var i = 0; i < waitAttempts; i++)
         {
-            await Task.Delay(500);
+            await Task.Delay(waitDelay);
             if (!IsProcessAlive(pid))
             {
                 return true;

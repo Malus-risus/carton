@@ -363,6 +363,9 @@ public partial class DashboardViewModel : PageViewModelBase
     public bool ShowStartupSelector => !IsConnected;
     public bool ShowDashboardMetrics => IsConnected;
     public DashboardViewModel? DashboardMetricsContent => ShowDashboardMetrics ? this : null;
+    public bool CanUseDashboardControls =>
+        _singBoxManager == null ||
+        _singBoxManager.State.Status is not (ServiceStatus.Starting or ServiceStatus.Stopping);
     public ObservableCollection<string> LogLevelOptions => SupportedLogLevels;
     public bool ShowVerboseLogLevelHint => SingBoxLogLevelHelper.IsVerbose(SelectedLogLevel);
     public bool HasAvailableProfiles => AvailableProfiles.Count > 0;
@@ -386,6 +389,7 @@ public partial class DashboardViewModel : PageViewModelBase
         OnPropertyChanged(nameof(HasSelectedProfile));
         OnPropertyChanged(nameof(CanToggleConnection));
         OnPropertyChanged(nameof(ConnectionToggleToolTip));
+        OnPropertyChanged(nameof(CanUseDashboardControls));
         OnPropertyChanged(nameof(LocalOnlyAccessToolTip));
         OnPropertyChanged(nameof(LanAccessToolTip));
     }
@@ -481,6 +485,7 @@ public partial class DashboardViewModel : PageViewModelBase
                 ServiceStatus.Error => _localizationService["Status.Error"],
                 _ => _localizationService["Status.Disconnected"]
             };
+            OnPropertyChanged(nameof(CanUseDashboardControls));
             OnPropertyChanged(nameof(ShowTerminalProxyButtons));
 
             if (status == ServiceStatus.Error)

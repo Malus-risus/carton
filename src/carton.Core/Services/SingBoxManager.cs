@@ -141,7 +141,9 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
             return true;
         }
 
-        if (HasCleanupCandidate())
+        UpdateStatus(ServiceStatus.Starting);
+
+        if (await HasLeftoverSingBoxProcessAsync())
         {
             LogManager("[WARN] Cleaning up leftover sing-box process before starting a new session");
             await StopAsync();
@@ -152,6 +154,8 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
                 SetError(error);
                 return false;
             }
+
+            UpdateStatus(ServiceStatus.Starting);
         }
 
         if (!File.Exists(configPath))
@@ -172,7 +176,6 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
 
         try
         {
-            UpdateStatus(ServiceStatus.Starting);
             _errorOutput.Clear();
             ResetSessionMetrics();
 
@@ -539,6 +542,17 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
 
         if (_elevatedPid.HasValue && IsProcessAlive(_elevatedPid.Value))
         {
+            return true;
+        }
+
+        var helperStatus = await TryGetWindowsHelperProcessStatusAsync();
+        if (helperStatus is { IsRunning: true })
+        {
+            if (helperStatus.Pid is > 0)
+            {
+                _elevatedPid = helperStatus.Pid.Value;
+            }
+
             return true;
         }
 

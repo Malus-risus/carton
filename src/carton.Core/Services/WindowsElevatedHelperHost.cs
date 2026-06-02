@@ -286,8 +286,15 @@ public static class WindowsElevatedHelperHost
                         lastKnownPid = singBoxProcess.Id;
                         if (!singBoxProcess.HasExited)
                         {
-                            singBoxProcess.Kill(force ? true : true);
-                            singBoxProcess.WaitForExit(5000);
+                            singBoxProcess.Kill(entireProcessTree: true);
+                            if (!singBoxProcess.WaitForExit(force ? 1500 : 3000))
+                            {
+                                return new WindowsHelperActionResponse
+                                {
+                                    Success = false,
+                                    Error = $"sing-box process {lastKnownPid} did not exit after kill"
+                                };
+                            }
                         }
 
                         lastKnownExitCode = singBoxProcess.ExitCode;
