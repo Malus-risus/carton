@@ -177,9 +177,24 @@ jobs:
         run: |
           publish_dir_portable="$GITHUB_WORKSPACE/artifacts/publish/${{ matrix.rid }}-portable"
           publish_dir_appimage="$GITHUB_WORKSPACE/artifacts/publish/${{ matrix.rid }}-appimage"
-          mkdir -p "$publish_dir_portable" "$publish_dir_appimage"
+          publish_dir_updater="$GITHUB_WORKSPACE/artifacts/publish/${{ matrix.rid }}-updater"
+          mkdir -p "$publish_dir_portable" "$publish_dir_appimage" "$publish_dir_updater"
           bash scripts/test-publish-linux-aot.sh "${{ matrix.rid }}" Release "$publish_dir_portable"
           bash scripts/test-publish-linux-aot.sh "${{ matrix.rid }}" Release "$publish_dir_appimage" INSTALLER_BUILD
+          dotnet publish src/carton.Updater/carton.Updater.csproj \
+            -c Release \
+            -r ${{ matrix.rid }} \
+            -o "$publish_dir_updater" \
+            /p:PublishAot=true \
+            /p:SelfContained=true \
+            /p:StripSymbols=true \
+            /p:DebugSymbols=false \
+            /p:DebugType=None \
+            /p:IncludeNativeLibrariesForSelfExtract=true \
+            /p:EnableCompressionInSingleFile=true \
+            /p:InvariantGlobalization=true
+          cp -f "$publish_dir_updater/Carton_Updater" "$publish_dir_portable/Carton_Updater"
+          chmod +x "$publish_dir_portable/Carton_Updater"
 
           echo "PUBLISH_DIR_PORTABLE=$publish_dir_portable" >> "$GITHUB_ENV"
           echo "PUBLISH_DIR_APPIMAGE=$publish_dir_appimage" >> "$GITHUB_ENV"
@@ -190,9 +205,11 @@ jobs:
         run: |
           $publishDirPortable = "$env:GITHUB_WORKSPACE\artifacts\publish\${{ matrix.rid }}-portable"
           $publishDirInstaller = "$env:GITHUB_WORKSPACE\artifacts\publish\${{ matrix.rid }}-installer"
+          $publishDirUpdater = "$env:GITHUB_WORKSPACE\artifacts\publish\${{ matrix.rid }}-updater"
           $kernelStageDir = Join-Path $env:RUNNER_TEMP "singbox-runtime-${{ matrix.rid }}"
           New-Item -ItemType Directory -Path $publishDirPortable -Force | Out-Null
           New-Item -ItemType Directory -Path $publishDirInstaller -Force | Out-Null
+          New-Item -ItemType Directory -Path $publishDirUpdater -Force | Out-Null
           if (Test-Path $kernelStageDir) {
             Remove-Item -Recurse -Force $kernelStageDir
           }
@@ -211,6 +228,19 @@ jobs:
             /p:EnableCompressionInSingleFile=true
           & "$env:GITHUB_WORKSPACE\scripts\include-singbox-kernel.ps1" -Rid '${{ matrix.rid }}' -Destination $kernelStageDir
           Copy-Item -Path (Join-Path $kernelStageDir '*') -Destination $publishDirPortable -Recurse -Force
+          dotnet publish src\carton.Updater\carton.Updater.csproj `
+            -c Release `
+            -r ${{ matrix.rid }} `
+            -o $publishDirUpdater `
+            /p:PublishAot=true `
+            /p:SelfContained=true `
+            /p:StripSymbols=true `
+            /p:DebugSymbols=false `
+            /p:DebugType=None `
+            /p:InvariantGlobalization=true `
+            /p:IncludeNativeLibrariesForSelfExtract=true `
+            /p:EnableCompressionInSingleFile=true
+          Copy-Item -LiteralPath (Join-Path $publishDirUpdater 'Carton_Updater.exe') -Destination $publishDirPortable -Force
           dotnet publish src\carton.GUI\carton.GUI.csproj `
             -c Release `
             -r ${{ matrix.rid }} `

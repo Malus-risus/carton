@@ -632,8 +632,17 @@ public partial class MainViewModel : ViewModelBase
 
     private void UpdateInteractionBlockState()
     {
-        _isInteractionBlocked = _settingsViewModel?.IsBlockingUi == true;
-        _interactionBlockedMessage = _settingsViewModel?.BlockingUiMessage ?? string.Empty;
+        if (_appUpdateCoordinator.IsApplyingAppUpdate)
+        {
+            _isInteractionBlocked = true;
+            _interactionBlockedMessage = _appUpdateCoordinator.AppUpdateStatus;
+        }
+        else
+        {
+            _isInteractionBlocked = _settingsViewModel?.IsBlockingUi == true;
+            _interactionBlockedMessage = _settingsViewModel?.BlockingUiMessage ?? string.Empty;
+        }
+
         OnPropertyChanged(nameof(IsInteractionBlocked));
         OnPropertyChanged(nameof(InteractionBlockedMessage));
     }
@@ -644,6 +653,13 @@ public partial class MainViewModel : ViewModelBase
             e.PropertyName == nameof(AppUpdateCoordinator.ShowStartupUpdateDialog))
         {
             OnPropertyChanged(nameof(AppUpdateDialogHost));
+        }
+
+        if (string.IsNullOrWhiteSpace(e.PropertyName) ||
+            e.PropertyName == nameof(AppUpdateCoordinator.IsApplyingAppUpdate) ||
+            e.PropertyName == nameof(AppUpdateCoordinator.AppUpdateStatus))
+        {
+            UpdateInteractionBlockState();
         }
     }
 

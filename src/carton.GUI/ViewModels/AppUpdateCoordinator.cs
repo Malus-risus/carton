@@ -34,6 +34,9 @@ public partial class AppUpdateCoordinator : ObservableObject
     private bool _isDownloadingAppUpdate;
 
     [ObservableProperty]
+    private bool _isApplyingAppUpdate;
+
+    [ObservableProperty]
     private bool _isAppUpdateAvailable;
 
     [ObservableProperty]
@@ -379,13 +382,38 @@ public partial class AppUpdateCoordinator : ObservableObject
 
         try
         {
+            var shouldBlockForExternalUpdate =
+                !_appUpdateService.SupportsInAppUpdates &&
+                (_appUpdateService.SupportsDirectInstallerUpdates || _appUpdateService.SupportsDirectPortableUpdates);
+            if (shouldBlockForExternalUpdate)
+            {
+                IsApplyingAppUpdate = true;
+            }
+
             AppUpdateStatus = GetString("Settings.Update.Status.Applying", "Restarting to apply update...");
+            if (shouldBlockForExternalUpdate)
+            {
+                await ShutdownApplicationServicesForExternalUpdateAsync();
+            }
+
             await _appUpdateService.RestartToApplyDownloadedUpdateAsync();
         }
         catch (Exception ex)
         {
+            IsApplyingAppUpdate = false;
             AppUpdateStatus = $"{GetString("Settings.Update.Status.Error", "Update failed")}: {ex.Message}";
         }
+    }
+
+    private static async Task ShutdownApplicationServicesForExternalUpdateAsync()
+    {
+        if (Application.Current?.ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktop ||
+            desktop.MainWindow?.DataContext is not MainViewModel viewModel)
+        {
+            return;
+        }
+
+        await viewModel.ShutdownAsync();
     }
 
     private async Task ShowApplyDownloadedUpdatePromptAsync()
@@ -586,7 +614,8 @@ public partial class AppUpdateCoordinator : ObservableObject
         CurrentAppVersion = _appUpdateService?.CurrentVersion ?? GetString("Common.Unknown", "unknown");
         _requiresManualAppUpdate = _appUpdateService != null &&
                                    !_appUpdateService.SupportsInAppUpdates &&
-                                   !_appUpdateService.SupportsDirectInstallerUpdates;
+                                   !_appUpdateService.SupportsDirectInstallerUpdates &&
+                                   !_appUpdateService.SupportsDirectPortableUpdates;
         IsPortableApp = _requiresManualAppUpdate;
         LatestAvailableVersion = _appUpdateService?.PendingRestartVersion ?? string.Empty;
         IsAppUpdateAvailable = false;

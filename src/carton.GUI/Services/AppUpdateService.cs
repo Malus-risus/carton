@@ -34,6 +34,8 @@ public interface IAppUpdateService
 
     bool SupportsDirectInstallerUpdates { get; }
 
+    bool SupportsDirectPortableUpdates { get; }
+
     string ReleasesPageUrl { get; }
 
     long ResolveExpectedDownloadSize(AppUpdateResult update);
@@ -84,6 +86,10 @@ public sealed record AppUpdateDownloadProgress(
 public sealed class AppUpdateService : IAppUpdateService
 {
     private static readonly TimeSpan GitHubLookupTimeout = TimeSpan.FromSeconds(6);
+    private const string WindowsPortableUpdaterExecutableName = "Carton_Updater.exe";
+    private const string UnixPortableUpdaterExecutableName = "Carton_Updater";
+    private const string DefaultWindowsMainExecutableName = "carton.exe";
+    private const string DefaultUnixMainExecutableName = "carton";
     private readonly string _repositoryUrl;
     private readonly Action<string>? _log;
     private readonly Lazy<IVelopackLocator> _locator;
@@ -92,11 +98,14 @@ public sealed class AppUpdateService : IAppUpdateService
     private readonly string _repoName;
     private readonly bool _supportsInAppUpdates;
     private readonly bool _supportsDirectInstallerUpdates;
+    private readonly bool _supportsDirectPortableUpdates;
 
     private VelopackAsset? _stagedRelease;
     private string? _stagedChannel;
     private string? _downloadedInstallerPath;
     private string? _downloadedInstallerVersion;
+    private string? _downloadedPortableArchivePath;
+    private string? _downloadedPortableArchiveVersion;
 
     public AppUpdateService(string repositoryUrl, string? token = null, Action<string>? log = null)
     {
@@ -123,6 +132,7 @@ public sealed class AppUpdateService : IAppUpdateService
         CurrentVersion = CartonApplicationInfo.Version;
         _supportsInAppUpdates = DetermineSupportsInAppUpdates();
         _supportsDirectInstallerUpdates = DetermineSupportsDirectInstallerUpdates();
+        _supportsDirectPortableUpdates = DetermineSupportsDirectPortableUpdates();
     }
 
     public string CurrentVersion { get; }
@@ -130,6 +140,8 @@ public sealed class AppUpdateService : IAppUpdateService
     public bool SupportsInAppUpdates => _supportsInAppUpdates;
 
     public bool SupportsDirectInstallerUpdates => _supportsDirectInstallerUpdates;
+
+    public bool SupportsDirectPortableUpdates => _supportsDirectPortableUpdates;
 
     public string ReleasesPageUrl => $"{_repositoryUrl}/releases";
 
@@ -140,6 +152,11 @@ public sealed class AppUpdateService : IAppUpdateService
             if (!string.IsNullOrWhiteSpace(_downloadedInstallerVersion))
             {
                 return _downloadedInstallerVersion;
+            }
+
+            if (!string.IsNullOrWhiteSpace(_downloadedPortableArchiveVersion))
+            {
+                return _downloadedPortableArchiveVersion;
             }
 
             var release = GetPendingRestartRelease();
@@ -156,7 +173,9 @@ public sealed class AppUpdateService : IAppUpdateService
     {
         get
         {
-            return !string.IsNullOrWhiteSpace(_downloadedInstallerPath) || GetPendingRestartRelease() != null;
+            return !string.IsNullOrWhiteSpace(_downloadedInstallerPath) ||
+                   !string.IsNullOrWhiteSpace(_downloadedPortableArchivePath) ||
+                   GetPendingRestartRelease() != null;
         }
     }
 
@@ -248,8 +267,19 @@ public sealed class AppUpdateService : IAppUpdateService
 
         if (!SupportsInAppUpdates)
         {
-            await DownloadInstallerUpdateAsync(update, progress, cancellationToken).ConfigureAwait(false);
-            return;
+            if (SupportsDirectInstallerUpdates)
+            {
+                await DownloadInstallerUpdateAsync(update, progress, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            if (SupportsDirectPortableUpdates)
+            {
+                await DownloadPortableUpdateAsync(update, progress, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            throw new InvalidOperationException("Direct updates are not supported for this build.");
         }
 
         var totalBytes = ResolveExpectedDownloadSize(update);
@@ -283,18 +313,30 @@ public sealed class AppUpdateService : IAppUpdateService
     {
         if (!SupportsInAppUpdates)
         {
-            if (string.IsNullOrWhiteSpace(_downloadedInstallerPath) || !File.Exists(_downloadedInstallerPath))
+            if (!string.IsNullOrWhiteSpace(_downloadedInstallerPath) && File.Exists(_downloadedInstallerPath))
             {
-                throw new InvalidOperationException("No downloaded installer is ready to apply.");
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = _downloadedInstallerPath,
+                    UseShellExecute = true
+                });
+                Environment.Exit(0);
+                return;
             }
 
-            Process.Start(new ProcessStartInfo
+            if (!string.IsNullOrWhiteSpace(_downloadedPortableArchivePath) && File.Exists(_downloadedPortableArchivePath))
             {
-                FileName = _downloadedInstallerPath,
-                UseShellExecute = true
-            });
-            Environment.Exit(0);
-            return;
+                StartPortableUpdater(_downloadedPortableArchivePath);
+                Environment.Exit(0);
+                return;
+            }
+
+            if (SupportsDirectPortableUpdates)
+            {
+                throw new InvalidOperationException("No downloaded portable package is ready to apply.");
+            }
+
+            throw new InvalidOperationException("No downloaded installer is ready to apply.");
         }
 
         if (_stagedRelease == null)
@@ -372,8 +414,10 @@ public sealed class AppUpdateService : IAppUpdateService
     {
         if (update.UpdateInfo == null)
         {
-            var installerAsset = ResolvePreferredInstallerAsset(update.ReleaseInfo);
-            return installerAsset?.Size ?? 0;
+            var directAsset = SupportsDirectPortableUpdates
+                ? ResolvePreferredPortableAsset(update.ReleaseInfo)
+                : ResolvePreferredInstallerAsset(update.ReleaseInfo);
+            return directAsset?.Size ?? 0;
         }
 
         var deltaPackages = update.UpdateInfo.DeltasToTarget;
@@ -470,8 +514,42 @@ public sealed class AppUpdateService : IAppUpdateService
 
     private static bool DetermineSupportsDirectInstallerUpdates()
     {
+#if INSTALLER_BUILD
         return OperatingSystem.IsWindows();
+#else
+        return false;
+#endif
     }
+
+    private static bool DetermineSupportsDirectPortableUpdates()
+    {
+#if INSTALLER_BUILD
+        return false;
+#else
+        if (!SupportsPortableUpdaterPlatform())
+        {
+            return false;
+        }
+
+        var appDirectory = AppDomain.CurrentDomain.BaseDirectory;
+        var markerPath = Path.Combine(appDirectory, PathHelper.PortableMarkerFileName);
+        var updaterPath = Path.Combine(appDirectory, GetPortableUpdaterExecutableName());
+        return File.Exists(markerPath) && File.Exists(updaterPath);
+#endif
+    }
+
+    private static bool SupportsPortableUpdaterPlatform()
+        => OperatingSystem.IsWindows() || OperatingSystem.IsLinux();
+
+    private static string GetPortableUpdaterExecutableName()
+        => OperatingSystem.IsWindows()
+            ? WindowsPortableUpdaterExecutableName
+            : UnixPortableUpdaterExecutableName;
+
+    private static string GetDefaultMainExecutableName()
+        => OperatingSystem.IsWindows()
+            ? DefaultWindowsMainExecutableName
+            : DefaultUnixMainExecutableName;
 
     private bool IsRemoteVersionDifferent(string remoteVersion)
     {
@@ -845,6 +923,86 @@ public sealed class AppUpdateService : IAppUpdateService
         _downloadedInstallerVersion = update.Version;
     }
 
+    private async Task DownloadPortableUpdateAsync(
+        AppUpdateResult update,
+        IProgress<AppUpdateDownloadProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        var asset = ResolvePreferredPortableAsset(update.ReleaseInfo);
+        if (asset == null)
+        {
+            throw new InvalidOperationException("No Windows portable asset was found for this release.");
+        }
+
+        var fileName = Path.GetFileName(asset.Name);
+        var tempPath = Path.Combine(Path.GetTempPath(), fileName);
+        using var httpClient = new HttpClient
+        {
+            Timeout = Timeout.InfiniteTimeSpan
+        };
+        httpClient.DefaultRequestHeaders.UserAgent.Add(
+            new ProductInfoHeaderValue("carton", CartonApplicationInfo.Version));
+        var downloader = new AcceleratedFileDownloader(httpClient, Log);
+        await downloader.DownloadFileAsync(
+            asset.DownloadUrl,
+            tempPath,
+            new Progress<FileDownloadProgress>(downloadProgress =>
+            {
+                var totalBytes = downloadProgress.TotalBytes > 0 ? downloadProgress.TotalBytes : asset.Size;
+                var percent = totalBytes > 0
+                    ? (int)Math.Clamp(downloadProgress.BytesReceived * 100 / totalBytes, 0, 100)
+                    : 0;
+                progress?.Report(new AppUpdateDownloadProgress(percent, downloadProgress.BytesReceived, totalBytes));
+            }),
+            cancellationToken).ConfigureAwait(false);
+
+        _downloadedPortableArchivePath = tempPath;
+        _downloadedPortableArchiveVersion = update.Version;
+    }
+
+    private static void StartPortableUpdater(string archivePath)
+    {
+        var appDirectory = AppDomain.CurrentDomain.BaseDirectory;
+        var updaterName = GetPortableUpdaterExecutableName();
+        var updaterPath = Path.Combine(appDirectory, updaterName);
+        if (!File.Exists(updaterPath))
+        {
+            throw new FileNotFoundException("Portable updater executable was not found.", updaterPath);
+        }
+
+        var tempUpdaterDirectory = Path.Combine(
+            Path.GetTempPath(),
+            "carton-updater-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempUpdaterDirectory);
+
+        var tempUpdaterPath = Path.Combine(tempUpdaterDirectory, updaterName);
+        File.Copy(updaterPath, tempUpdaterPath, overwrite: true);
+
+        var restartExecutable = Path.GetFileName(Environment.ProcessPath);
+        if (string.IsNullOrWhiteSpace(restartExecutable))
+        {
+            restartExecutable = GetDefaultMainExecutableName();
+        }
+
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = tempUpdaterPath,
+            WorkingDirectory = tempUpdaterDirectory,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        startInfo.ArgumentList.Add("--pid");
+        startInfo.ArgumentList.Add(Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
+        startInfo.ArgumentList.Add("--archive");
+        startInfo.ArgumentList.Add(archivePath);
+        startInfo.ArgumentList.Add("--target");
+        startInfo.ArgumentList.Add(appDirectory);
+        startInfo.ArgumentList.Add("--restart");
+        startInfo.ArgumentList.Add(restartExecutable);
+
+        Process.Start(startInfo);
+    }
+
     private static GitHubAssetInfo? ResolvePreferredInstallerAsset(GitHubReleaseInfo release)
     {
         if (release.Assets.Count == 0)
@@ -868,6 +1026,32 @@ public sealed class AppUpdateService : IAppUpdateService
                     ? asset.Name.Contains("arm64", StringComparison.OrdinalIgnoreCase)
                     : asset.Name.Contains("x64", StringComparison.OrdinalIgnoreCase))
             .ThenBy(asset => asset.Name.EndsWith(".msi", StringComparison.OrdinalIgnoreCase))
+            .FirstOrDefault();
+    }
+
+    private static GitHubAssetInfo? ResolvePreferredPortableAsset(GitHubReleaseInfo release)
+    {
+        if (release.Assets.Count == 0)
+        {
+            return null;
+        }
+
+        var preferArm64 = RuntimeInformation.ProcessArchitecture == Architecture.Arm64;
+        var expectedExtension = OperatingSystem.IsLinux() ? ".tar.gz" : ".zip";
+        var ridPrefix = GetPlatformRidPrefix();
+
+        return release.Assets
+            .Where(asset => asset.Name.EndsWith(expectedExtension, StringComparison.OrdinalIgnoreCase) &&
+                            asset.Name.Contains("portable", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(asset => asset.Name.Contains(ridPrefix, StringComparison.OrdinalIgnoreCase))
+            .ThenByDescending(asset =>
+                OperatingSystem.IsLinux()
+                    ? asset.Name.Contains("linux", StringComparison.OrdinalIgnoreCase)
+                    : asset.Name.Contains("win", StringComparison.OrdinalIgnoreCase))
+            .ThenByDescending(asset =>
+                preferArm64
+                    ? asset.Name.Contains("arm64", StringComparison.OrdinalIgnoreCase)
+                    : asset.Name.Contains("x64", StringComparison.OrdinalIgnoreCase))
             .FirstOrDefault();
     }
 }
