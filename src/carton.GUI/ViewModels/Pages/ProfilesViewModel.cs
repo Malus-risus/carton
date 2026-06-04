@@ -392,9 +392,7 @@ public partial class ProfilesViewModel : PageViewModelBase, IDisposable
                         return;
                     }
 
-                    configContent = string.IsNullOrWhiteSpace(ConfigContent)
-                        ? await File.ReadAllTextAsync(NewLocalFilePath)
-                        : ConfigContent;
+                    configContent = await File.ReadAllTextAsync(NewLocalFilePath);
                 }
             }
             else
@@ -474,7 +472,7 @@ public partial class ProfilesViewModel : PageViewModelBase, IDisposable
             NewProfileUrl = string.Empty;
             NewAutoUpdate = false;
             NewUpdateIntervalMinutes = DefaultUpdateIntervalMinutes;
-            ConfigContent = "{}";
+            ConfigContent = await File.ReadAllTextAsync(NewLocalFilePath);
             _isConfigContentLoaded = true;
             IsContentEditorVisible = false;
             _editingProfile = null;

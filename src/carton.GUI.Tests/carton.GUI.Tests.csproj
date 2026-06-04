@@ -18,4 +18,8 @@
   <ItemGroup>
     <Compile Include="..\carton.GUI\Services\LogParser.cs" Link="Services\LogParser.cs" />
   </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\carton.Core\carton.Core.csproj" />
+  </ItemGroup>
 </Project>

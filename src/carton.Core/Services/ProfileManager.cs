@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -409,6 +410,7 @@ public class ProfileManager : IProfileManager
 
             var hasTun = false;
             JsonElement? firstInbound = null;
+            JsonElement? mixedInbound = null;
             JsonElement? primaryInbound = null;
 
             foreach (var inbound in inboundsElement.EnumerateArray())
@@ -427,10 +429,15 @@ public class ProfileManager : IProfileManager
                     continue;
                 }
 
+                if (string.Equals(type, "mixed", StringComparison.OrdinalIgnoreCase))
+                {
+                    mixedInbound ??= inbound;
+                }
+
                 primaryInbound ??= inbound;
             }
 
-            var inboundElement = primaryInbound ?? firstInbound;
+            var inboundElement = mixedInbound ?? primaryInbound ?? firstInbound;
             if (inboundElement is null)
             {
                 return null;
@@ -444,7 +451,7 @@ public class ProfileManager : IProfileManager
             return new ProfileRuntimeOptions
             {
                 InboundPort = NormalizePort(port),
-                AllowLanConnections = string.Equals(listen, "0.0.0.0", StringComparison.OrdinalIgnoreCase),
+                AllowLanConnections = IsLanListenAddress(listen),
                 EnableSystemProxy = setSystemProxy,
                 EnableTunInbound = hasTun,
                 LogLevel = logLevel,
@@ -587,6 +594,27 @@ public class ProfileManager : IProfileManager
     private static string NormalizeLogLevel(string? level)
     {
         return SingBoxLogLevelHelper.Normalize(level);
+    }
+
+    private static bool IsLanListenAddress(string? listen)
+    {
+        if (string.IsNullOrWhiteSpace(listen))
+        {
+            return false;
+        }
+
+        var normalized = listen.Trim();
+        if (normalized.Length > 2 && normalized[0] == '[' && normalized[^1] == ']')
+        {
+            normalized = normalized[1..^1];
+        }
+
+        if (!IPAddress.TryParse(normalized, out var address))
+        {
+            return false;
+        }
+
+        return !IPAddress.IsLoopback(address);
     }
 
     private static int NormalizePort(int port)
