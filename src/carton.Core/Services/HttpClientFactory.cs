@@ -43,11 +43,8 @@ public static class HttpClientFactory
 
     public static void UpdateLocalApi(string host, int port, string? secret)
     {
-        var client = new HttpClient
-        {
-            BaseAddress = new Uri($"http://{host}:{port}/"),
-            Timeout = TimeSpan.FromSeconds(5)
-        };
+        var client = CreateLoopbackClient(TimeSpan.FromSeconds(5));
+        client.BaseAddress = new Uri($"http://{host}:{port}/");
 
         if (!string.IsNullOrWhiteSpace(secret))
         {
@@ -58,6 +55,31 @@ public static class HttpClientFactory
         LocalApiAddress = $"http://{host}:{port}";
         LocalApiPort = port;
         LocalApiSecret = string.IsNullOrWhiteSpace(secret) ? null : secret;
+    }
+
+    public static HttpClient CreateLocalApiProbeClient(TimeSpan timeout)
+    {
+        var client = CreateLoopbackClient(timeout);
+
+        if (!string.IsNullOrWhiteSpace(LocalApiSecret))
+        {
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", LocalApiSecret);
+        }
+
+        return client;
+    }
+
+    public static HttpClient CreateLoopbackClient(TimeSpan timeout)
+    {
+        var handler = new HttpClientHandler
+        {
+            UseProxy = false
+        };
+
+        return new HttpClient(handler, disposeHandler: true)
+        {
+            Timeout = timeout
+        };
     }
 
     /// <summary>

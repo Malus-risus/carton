@@ -136,26 +136,38 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
 
     public async Task<bool> StartAsync(string configPath)
     {
+        var timing = Stopwatch.StartNew();
+        LogTiming("start.begin");
         if (_state.Status == ServiceStatus.Running)
         {
+            LogTiming("start.skip_already_running", timing.Elapsed);
             return true;
         }
 
         UpdateStatus(ServiceStatus.Starting);
 
+        var leftoverTiming = Stopwatch.StartNew();
         if (await HasLeftoverSingBoxProcessAsync())
         {
+            LogTiming("start.leftover_detected", leftoverTiming.Elapsed);
             LogManager("[WARN] Cleaning up leftover sing-box process before starting a new session");
             await StopAsync();
+            leftoverTiming.Restart();
             if (await HasLeftoverSingBoxProcessAsync())
             {
+                LogTiming("start.leftover_cleanup_failed", leftoverTiming.Elapsed);
                 const string error = "Failed to clean up previous sing-box process before start";
                 LogManager($"[ERROR] {error}");
                 SetError(error);
                 return false;
             }
 
+            LogTiming("start.leftover_cleanup_complete", leftoverTiming.Elapsed);
             UpdateStatus(ServiceStatus.Starting);
+        }
+        else
+        {
+            LogTiming("start.leftover_check", leftoverTiming.Elapsed);
         }
 
         if (!File.Exists(configPath))
@@ -191,7 +203,9 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
                 else
                 {
                     LogManager("[INFO] TUN inbound detected, requesting elevated privileges...");
-                    return await StartElevatedAsync(configPath);
+                    var elevatedResult = await StartElevatedAsync(configPath);
+                    LogTiming(elevatedResult ? "start.end_success_elevated" : "start.end_failed_elevated", timing.Elapsed);
+                    return elevatedResult;
                 }
             }
 
@@ -248,12 +262,16 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
             _process.EnableRaisingEvents = true;
 
             LogManager("[INFO] Starting process...");
+            var processStartTiming = Stopwatch.StartNew();
             _process.Start();
             TryAttachProcessToWindowsJob(_process);
             _process.BeginOutputReadLine();
             _process.BeginErrorReadLine();
+            LogTiming("start.process_started", processStartTiming.Elapsed);
 
+            var readyTiming = Stopwatch.StartNew();
             var ready = await WaitForApiReadyAsync(null, TimeSpan.FromSeconds(25));
+            LogTiming(ready ? "start.api_ready" : "start.api_not_ready", readyTiming.Elapsed);
             if (!ready)
             {
                 if (_process.HasExited)
@@ -283,6 +301,7 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
 
             EnsureRuntimeMonitorsRunning();
 
+            LogTiming("start.end_success", timing.Elapsed);
             return true;
         }
         catch (Exception ex)
@@ -291,6 +310,7 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
             LogManager($"[ERROR] {error}");
             await CleanupFailedStartAttemptAsync();
             SetError(error);
+            LogTiming("start.end_exception", timing.Elapsed);
             return false;
         }
     }
@@ -411,11 +431,15 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
 
     public async Task StopAsync()
     {
+        var timing = Stopwatch.StartNew();
+        LogTiming("stop.begin");
         var canUseElevatedStop = CanUseElevatedStop();
         var hasTargetProcess = _process != null || canUseElevatedStop;
         if (_process == null && !canUseElevatedStop)
         {
+            var discoverTiming = Stopwatch.StartNew();
             _elevatedPid = await TryFindProcessPidByApiPortAsync();
+            LogTiming("stop.discover_pid_by_api_port", discoverTiming.Elapsed);
             canUseElevatedStop = CanUseElevatedStop();
             hasTargetProcess = canUseElevatedStop;
         }
@@ -428,13 +452,17 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
 
             if (_process != null)
             {
+                var managedStopTiming = Stopwatch.StartNew();
                 await StopManagedProcessAsync(_process);
+                LogTiming("stop.managed_process_stopped", managedStopTiming.Elapsed);
                 _process.Dispose();
                 _process = null;
             }
             else if (canUseElevatedStop)
             {
+                var elevatedStopTiming = Stopwatch.StartNew();
                 stopped = await StopElevatedAsync();
+                LogTiming(stopped ? "stop.elevated_stopped" : "stop.elevated_failed", elevatedStopTiming.Elapsed);
             }
 
             if (!stopped && hasTargetProcess)
@@ -454,19 +482,23 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
             // have a chance to clean it up itself (e.g. process was killed).
             if (_systemProxyEnabled)
             {
+                var proxyTiming = Stopwatch.StartNew();
                 SystemProxyHelper.ClearSystemProxy();
+                LogTiming("stop.system_proxy_cleared", proxyTiming.Elapsed);
                 _systemProxyEnabled = false;
             }
 
             _state.StartTime = null;
             UpdateStatus(ServiceStatus.Stopped);
             LogManager("[INFO] sing-box stopped");
+            LogTiming("stop.end_success", timing.Elapsed);
         }
         catch (Exception ex)
         {
             var error = $"Failed to stop sing-box: {ex.Message}";
             LogManager($"[ERROR] {error}");
             SetError(error);
+            LogTiming("stop.end_exception", timing.Elapsed);
         }
     }
 
@@ -514,6 +546,25 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
     private void LogManager(string message)
     {
         ManagerLogReceived?.Invoke(this, message);
+    }
+
+    [Conditional("DEBUG")]
+    private void LogTiming(string stage, TimeSpan? elapsed = null)
+    {
+        var elapsedText = elapsed.HasValue ? $" {elapsed.Value.TotalMilliseconds:F0}ms" : string.Empty;
+        var message = $"[TIMING] {DateTimeOffset.Now:O} {stage}{elapsedText}";
+        LogManager(message);
+
+        try
+        {
+            var timingLogPath = Path.Combine(_workingDirectory, "logs", "timing.log");
+            Directory.CreateDirectory(Path.GetDirectoryName(timingLogPath)!);
+            File.AppendAllText(timingLogPath, message + Environment.NewLine, Encoding.UTF8);
+        }
+        catch
+        {
+            // Timing logs must never affect core lifecycle operations.
+        }
     }
 
     private void LogKernel(string message)

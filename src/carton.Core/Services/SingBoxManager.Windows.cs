@@ -15,6 +15,13 @@ public partial class SingBoxManager
     private const int WindowsElevatedHelperPort = 47891;
     private const string WindowsElevatedHelperTokenHeader = "X-Carton-Helper-Token";
 
+    private enum WindowsHelperStopResult
+    {
+        Success,
+        ActionFailed,
+        EndpointUnavailable
+    }
+
     [SupportedOSPlatform("windows")]
     private async Task<ElevatedStartResult> StartElevatedOnWindowsAsync(string configPath, string logPath)
     {
@@ -44,7 +51,7 @@ public partial class SingBoxManager
             var json = JsonSerializer.Serialize(request, CartonCoreJsonContext.Default.WindowsHelperStartRequest);
 
             LogManager("[INFO] Sending start request to elevated helper...");
-            using var sendClient = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            using var sendClient = HttpClientFactory.CreateLoopbackClient(TimeSpan.FromSeconds(5));
             using var message = new HttpRequestMessage(HttpMethod.Post, GetWindowsHelperUri("start"))
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json")
@@ -174,14 +181,18 @@ public partial class SingBoxManager
     [SupportedOSPlatform("windows")]
     private async Task<bool> EnsureWindowsElevatedHelperRunningAsync()
     {
+        var timing = Stopwatch.StartNew();
+        LogTiming("windows_helper.ensure.begin");
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
+            LogTiming("windows_helper.ensure.not_windows", timing.Elapsed);
             return false;
         }
 
         if (!string.IsNullOrWhiteSpace(_windowsElevatedHelperToken) &&
             await PingWindowsElevatedHelperAsync(_windowsElevatedHelperToken))
         {
+            LogTiming("windows_helper.ensure.existing_ready", timing.Elapsed);
             return true;
         }
 
@@ -189,29 +200,40 @@ public partial class SingBoxManager
         if (string.IsNullOrWhiteSpace(executablePath))
         {
             LogManager("[ERROR] Unable to resolve current executable path for elevated helper");
+            LogTiming("windows_helper.ensure.no_executable", timing.Elapsed);
             return false;
         }
 
         var token = Guid.NewGuid().ToString("N");
         var parentPid = Environment.ProcessId;
+        var taskTiming = Stopwatch.StartNew();
         if (await TryStartWindowsElevatedHelperViaScheduledTaskAsync(executablePath, token, parentPid))
         {
+            LogTiming("windows_helper.ensure.scheduled_task_ready", taskTiming.Elapsed);
+            LogTiming("windows_helper.ensure.end_success", timing.Elapsed);
             return true;
         }
 
+        LogTiming("windows_helper.ensure.scheduled_task_failed", taskTiming.Elapsed);
+        var runAsTiming = Stopwatch.StartNew();
         var result = await StartWindowsElevatedHelperViaRunAsAsync(executablePath, token, parentPid);
         if (!result.Success)
         {
             LogManager($"[ERROR] {result.ErrorMessage ?? "Failed to start elevated helper"}");
+            LogTiming("windows_helper.ensure.runas_failed", runAsTiming.Elapsed);
+            LogTiming("windows_helper.ensure.end_failed", timing.Elapsed);
             return false;
         }
+        LogTiming("windows_helper.ensure.runas_started", runAsTiming.Elapsed);
 
         if (int.TryParse(result.RawOutput, out var helperPid) && helperPid > 0)
         {
             _windowsElevatedHelperPid = helperPid;
         }
 
-        return await WaitForWindowsElevatedHelperAsync(token);
+        var ready = await WaitForWindowsElevatedHelperAsync(token);
+        LogTiming(ready ? "windows_helper.ensure.runas_ready" : "windows_helper.ensure.runas_not_ready", timing.Elapsed);
+        return ready;
     }
 
     [SupportedOSPlatform("windows")]
@@ -279,7 +301,22 @@ public partial class SingBoxManager
                 return true;
             }
 
-            LogManager("[WARN] Scheduled task launch did not start a ready helper, re-registering task and retrying");
+            LogManager("[WARN] Scheduled task launch did not start a ready helper, cleaning stale helper and retrying");
+            TryKillWindowsHelperProcess();
+            token = Guid.NewGuid().ToString("N");
+
+            if (!await WriteWindowsElevatedHelperLaunchRequestAsync(requestFilePath, token, parentPid))
+            {
+                return false;
+            }
+
+            if (await WindowsElevatedHelperTaskUtility.RunTaskAsync() &&
+                await WaitForWindowsElevatedHelperAsync(token))
+            {
+                return true;
+            }
+
+            LogManager("[WARN] Scheduled task launch did not start a ready helper after cleanup, re-registering task and retrying");
             var retryRegistrationResult = await WindowsElevatedHelperTaskUtility.EnsureRegisteredAsync(
                 _workingDirectory,
                 executablePath);
@@ -298,6 +335,7 @@ public partial class SingBoxManager
                 return false;
             }
 
+            token = Guid.NewGuid().ToString("N");
             if (!await WriteWindowsElevatedHelperLaunchRequestAsync(requestFilePath, token, parentPid))
             {
                 return false;
@@ -413,10 +451,11 @@ public partial class SingBoxManager
     {
         try
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            using var cts = new CancellationTokenSource(LocalApiProbeTimeout);
+            using var client = HttpClientFactory.CreateLoopbackClient(LocalApiProbeTimeout);
             using var message = new HttpRequestMessage(HttpMethod.Get, GetWindowsHelperUri("ping"));
             message.Headers.Add(WindowsElevatedHelperTokenHeader, token);
-            using var response = await _httpClient.SendAsync(message, cts.Token);
+            using var response = await client.SendAsync(message, cts.Token);
             if (!response.IsSuccessStatusCode)
             {
                 return false;
@@ -431,40 +470,47 @@ public partial class SingBoxManager
         }
     }
 
-    private async Task<bool> TryStopViaWindowsElevatedHelperAsync(bool force)
+    private async Task<WindowsHelperStopResult> TryStopViaWindowsElevatedHelperAsync(bool force, int? pid = null)
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ||
             string.IsNullOrWhiteSpace(_windowsElevatedHelperToken))
         {
-            return false;
+            return WindowsHelperStopResult.EndpointUnavailable;
         }
 
         try
         {
-            using var client = new HttpClient();
+            var timeout = TimeSpan.FromSeconds(5);
+            using var client = HttpClientFactory.CreateLoopbackClient(timeout);
+            var stopPath = force ? "stop?force=1" : "stop";
+            if (pid is > 0)
+            {
+                stopPath += force ? $"&pid={pid.Value}" : $"?pid={pid.Value}";
+            }
+
             using var message = new HttpRequestMessage(
                 HttpMethod.Post,
-                GetWindowsHelperUri(force ? "stop?force=1" : "stop"));
+                GetWindowsHelperUri(stopPath));
             message.Headers.Add(WindowsElevatedHelperTokenHeader, _windowsElevatedHelperToken);
 
             var sendTask = client.SendAsync(message);
-            var completed = await Task.WhenAny(sendTask, Task.Delay(3000));
+            var completed = await Task.WhenAny(sendTask, Task.Delay(timeout));
 
             if (completed != sendTask || !sendTask.IsCompletedSuccessfully)
             {
-                return false;
+                return WindowsHelperStopResult.EndpointUnavailable;
             }
 
             using var response = sendTask.Result;
             if (!response.IsSuccessStatusCode)
             {
-                return false;
+                return WindowsHelperStopResult.EndpointUnavailable;
             }
 
             var payload = (await response.Content.ReadAsStringAsync()).Trim();
             if (string.IsNullOrWhiteSpace(payload))
             {
-                return true;
+                return WindowsHelperStopResult.Success;
             }
 
             WindowsHelperActionResponse? result = null;
@@ -478,11 +524,53 @@ public partial class SingBoxManager
             {
             }
 
-            return result == null || result.Success;
+            return result == null || result.Success
+                ? WindowsHelperStopResult.Success
+                : WindowsHelperStopResult.ActionFailed;
         }
         catch
         {
+            return WindowsHelperStopResult.EndpointUnavailable;
+        }
+    }
+
+    private async Task<bool> TryStopViaFreshWindowsElevatedHelperAsync(int pid, bool force)
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
             return false;
+        }
+
+        var executablePath = Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(executablePath))
+        {
+            return false;
+        }
+
+        var previousToken = _windowsElevatedHelperToken;
+        var previousHelperPid = _windowsElevatedHelperPid;
+        _windowsElevatedHelperToken = null;
+        _windowsElevatedHelperPid = null;
+
+        try
+        {
+            if (!await TryStartWindowsElevatedHelperViaScheduledTaskAsync(
+                    executablePath,
+                    Guid.NewGuid().ToString("N"),
+                    Environment.ProcessId))
+            {
+                return false;
+            }
+
+            return await TryStopViaWindowsElevatedHelperAsync(force, pid) == WindowsHelperStopResult.Success;
+        }
+        finally
+        {
+            if (string.IsNullOrWhiteSpace(_windowsElevatedHelperToken))
+            {
+                _windowsElevatedHelperToken = previousToken;
+                _windowsElevatedHelperPid = previousHelperPid;
+            }
         }
     }
 
@@ -561,6 +649,12 @@ public partial class SingBoxManager
         TryKillWindowsHelperProcess();
     }
 
+    private void InvalidateWindowsElevatedHelperSession()
+    {
+        _windowsElevatedHelperToken = null;
+        _windowsElevatedHelperPid = null;
+    }
+
     private void WriteStopSignalFile()
     {
         try
@@ -603,10 +697,11 @@ public partial class SingBoxManager
 
         try
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            using var cts = new CancellationTokenSource(LocalApiProbeTimeout);
+            using var client = HttpClientFactory.CreateLoopbackClient(LocalApiProbeTimeout);
             using var message = new HttpRequestMessage(HttpMethod.Get, GetWindowsHelperUri("status"));
             message.Headers.Add(WindowsElevatedHelperTokenHeader, _windowsElevatedHelperToken);
-            using var response = await _httpClient.SendAsync(message, cts.Token);
+            using var response = await client.SendAsync(message, cts.Token);
             if (!response.IsSuccessStatusCode)
             {
                 return null;

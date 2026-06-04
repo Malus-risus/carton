@@ -301,7 +301,7 @@ public partial class SingBoxManager
     {
         try
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            using var cts = new CancellationTokenSource(LocalApiProbeTimeout);
             using var response = await _httpClient.GetAsync($"{_apiAddress}/version", cts.Token);
             if (response.IsSuccessStatusCode)
             {

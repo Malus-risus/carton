@@ -281,7 +281,7 @@
                     <ToggleSwitch Grid.Column="1"
 
                                   IsChecked="{Binding EnableTunInbound}"
-                                  IsEnabled="{Binding ShowStartupSelector}"/>
+                                  IsEnabled="{Binding CanToggleTunInbound}"/>
                 </Grid>
               </StackPanel>
             </Border>

@@ -273,7 +273,7 @@ public static class WindowsElevatedHelperHost
             };
         }
 
-        WindowsHelperActionResponse StopSingBox(bool force)
+        WindowsHelperActionResponse StopSingBox(bool force, int? fallbackPid = null)
         {
             lock (processLock)
             {
@@ -301,6 +301,33 @@ public static class WindowsElevatedHelperHost
 
                         singBoxProcess.Dispose();
                         singBoxProcess = null;
+                    }
+                    else if (fallbackPid is > 0)
+                    {
+                        try
+                        {
+                            using var fallbackProcess = Process.GetProcessById(fallbackPid.Value);
+                            if (!fallbackProcess.HasExited)
+                            {
+                                fallbackProcess.Kill(entireProcessTree: true);
+                                if (!fallbackProcess.WaitForExit(force ? 1500 : 3000))
+                                {
+                                    return new WindowsHelperActionResponse
+                                    {
+                                        Success = false,
+                                        Error = $"sing-box process {fallbackPid.Value} did not exit after kill"
+                                    };
+                                }
+                            }
+
+                            lastKnownPid = fallbackPid.Value;
+                            lastKnownExitCode = null;
+                        }
+                        catch (ArgumentException)
+                        {
+                            lastKnownPid = fallbackPid.Value;
+                            lastKnownExitCode = null;
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -577,7 +604,10 @@ public static class WindowsElevatedHelperHost
                             context.Request.QueryString["force"],
                             "1",
                             StringComparison.Ordinal);
-                        var stopResult = StopSingBox(force);
+                        var fallbackPid = int.TryParse(context.Request.QueryString["pid"], out var parsedPid)
+                            ? parsedPid
+                            : (int?)null;
+                        var stopResult = StopSingBox(force, fallbackPid);
                         await WriteJsonAsync(context.Response, HttpStatusCode.OK, stopResult);
                         break;
                     }
@@ -795,19 +825,33 @@ public static class WindowsElevatedHelperHost
 
     private static async Task WriteTextAsync(HttpListenerResponse response, HttpStatusCode statusCode, string text)
     {
-        response.StatusCode = (int)statusCode;
-        response.ContentType = "text/plain; charset=utf-8";
-        await using var writer = new StreamWriter(response.OutputStream, Encoding.UTF8, 1024, leaveOpen: false);
-        await writer.WriteAsync(text);
+        try
+        {
+            response.StatusCode = (int)statusCode;
+            response.ContentType = "text/plain; charset=utf-8";
+            await using var writer = new StreamWriter(response.OutputStream, Encoding.UTF8, 1024, leaveOpen: true);
+            await writer.WriteAsync(text);
+        }
+        finally
+        {
+            response.Close();
+        }
     }
 
     private static async Task WriteJsonAsync(HttpListenerResponse response, HttpStatusCode statusCode, WindowsHelperActionResponse payload)
     {
-        response.StatusCode = (int)statusCode;
-        response.ContentType = "application/json; charset=utf-8";
-        await using var writer = new Utf8JsonWriter(response.OutputStream);
-        JsonSerializer.Serialize(writer, payload, CartonCoreJsonContext.Default.WindowsHelperActionResponse);
-        await writer.FlushAsync();
+        try
+        {
+            response.StatusCode = (int)statusCode;
+            response.ContentType = "application/json; charset=utf-8";
+            await using var writer = new Utf8JsonWriter(response.OutputStream);
+            JsonSerializer.Serialize(writer, payload, CartonCoreJsonContext.Default.WindowsHelperActionResponse);
+            await writer.FlushAsync();
+        }
+        finally
+        {
+            response.Close();
+        }
     }
 
     private static async Task WriteProcessStatusAsync(
@@ -815,11 +859,18 @@ public static class WindowsElevatedHelperHost
         HttpStatusCode statusCode,
         WindowsHelperProcessStatusResponse payload)
     {
-        response.StatusCode = (int)statusCode;
-        response.ContentType = "application/json; charset=utf-8";
-        await using var writer = new Utf8JsonWriter(response.OutputStream);
-        JsonSerializer.Serialize(writer, payload, CartonCoreJsonContext.Default.WindowsHelperProcessStatusResponse);
-        await writer.FlushAsync();
+        try
+        {
+            response.StatusCode = (int)statusCode;
+            response.ContentType = "application/json; charset=utf-8";
+            await using var writer = new Utf8JsonWriter(response.OutputStream);
+            JsonSerializer.Serialize(writer, payload, CartonCoreJsonContext.Default.WindowsHelperProcessStatusResponse);
+            await writer.FlushAsync();
+        }
+        finally
+        {
+            response.Close();
+        }
     }
 
     private static async Task<bool> IsApiReadyAsync(string? apiAddress, string? apiSecret)
@@ -831,7 +882,7 @@ public static class WindowsElevatedHelperHost
 
         try
         {
-            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+            using var client = HttpClientFactory.CreateLoopbackClient(TimeSpan.FromSeconds(1));
             if (!string.IsNullOrWhiteSpace(apiSecret))
             {
                 client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiSecret);

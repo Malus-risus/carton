@@ -149,6 +149,8 @@
   <x:String x:Key="Dashboard.Status.RuntimeOptionsResetToConfig">已重置为配置值</x:String>
   <x:String x:Key="Dashboard.Status.ResetRuntimeOptionsUnavailable">当前配置值不可用，无法重置</x:String>
   <x:String x:Key="Dashboard.Status.ResetRuntimeOptionsFailed">重置配置项失败</x:String>
+  <x:String x:Key="Dashboard.Status.RestartingForTun">正在重启内核以应用 TUN 变更...</x:String>
+  <x:String x:Key="Dashboard.Status.TunRestartFailedRestored">应用 TUN 变更失败，已恢复之前的运行状态。</x:String>
 
 	<x:String x:Key="Status.Connected">已连接</x:String>
 	<x:String x:Key="Status.Starting">正在启动...</x:String>

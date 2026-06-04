@@ -53,20 +53,29 @@ public partial class DashboardViewModel : PageViewModelBase
     private ProfileRuntimeOptions _runtimeOptions = new();
     private bool _suppressRuntimeOptionUpdates;
     private bool _suppressSystemProxyApply;
+    private DashboardRuntimeOperation _runtimeOperation = DashboardRuntimeOperation.None;
     private bool _isOnPage = true;
     private bool _isWindowVisible = true;
     private bool _isLiveRefreshActive;
     private int _pendingTrafficRefresh;
     private int _pendingMemoryRefresh;
+    private int? _runningProfileId;
+    private string? _runningSourceConfigPath;
     private static readonly ObservableCollection<string> SupportedLogLevels = new(SingBoxLogLevelHelper.Levels);
     public override NavigationPage PageType => NavigationPage.Dashboard;
 
-    [NotifyCanExecuteChangedFor(nameof(RefreshConnectivityCommand))]
     [ObservableProperty]
-    private bool _isConnected;
+    private ServiceStatus _kernelStatus = ServiceStatus.Stopped;
 
-    [ObservableProperty]
-    private string _statusText = "Disconnected";
+    public bool IsConnected => KernelStatus == ServiceStatus.Running;
+    public string StatusText => KernelStatus switch
+    {
+        ServiceStatus.Running => _localizationService["Status.Connected"],
+        ServiceStatus.Starting => _localizationService["Status.Starting"],
+        ServiceStatus.Stopping => _localizationService["Status.Stopping"],
+        ServiceStatus.Error => _localizationService["Status.Error"],
+        _ => _localizationService["Status.Disconnected"]
+    };
 
     [ObservableProperty]
     private string _uploadSpeed = "0 B/s";
@@ -351,7 +360,17 @@ public partial class DashboardViewModel : PageViewModelBase
 
         ApplyRunningSystemProxy(value);
     }
-    partial void OnEnableTunInboundChanged(bool value) => UpdateRuntimeOptions(options => options.EnableTunInbound = value);
+    partial void OnEnableTunInboundChanged(bool oldValue, bool newValue)
+    {
+        UpdateRuntimeOptions(options => options.EnableTunInbound = newValue);
+
+        if (_suppressRuntimeOptionUpdates || !IsConnected)
+        {
+            return;
+        }
+
+        _ = RestartForTunToggleAsync(newValue, previousValue: oldValue);
+    }
     partial void OnSelectedLogLevelChanged(string value)
     {
         UpdateRuntimeOptions(options => options.LogLevel = NormalizeLogLevel(value));
@@ -365,7 +384,9 @@ public partial class DashboardViewModel : PageViewModelBase
     public DashboardViewModel? DashboardMetricsContent => ShowDashboardMetrics ? this : null;
     public bool CanUseDashboardControls =>
         _singBoxManager == null ||
-        _singBoxManager.State.Status is not (ServiceStatus.Starting or ServiceStatus.Stopping);
+        (_runtimeOperation == DashboardRuntimeOperation.None &&
+         KernelStatus is not (ServiceStatus.Starting or ServiceStatus.Stopping));
+    public bool CanToggleTunInbound => CanUseDashboardControls && (ShowStartupSelector || IsConnected);
     public ObservableCollection<string> LogLevelOptions => SupportedLogLevels;
     public bool ShowVerboseLogLevelHint => SingBoxLogLevelHelper.IsVerbose(SelectedLogLevel);
     public bool HasAvailableProfiles => AvailableProfiles.Count > 0;
@@ -381,8 +402,10 @@ public partial class DashboardViewModel : PageViewModelBase
         OnPropertyChanged(nameof(CanToggleConnection));
     }
 
-    partial void OnIsConnectedChanged(bool value)
+    partial void OnKernelStatusChanged(ServiceStatus value)
     {
+        OnPropertyChanged(nameof(IsConnected));
+        OnPropertyChanged(nameof(StatusText));
         OnPropertyChanged(nameof(ShowStartupSelector));
         OnPropertyChanged(nameof(ShowDashboardMetrics));
         OnPropertyChanged(nameof(DashboardMetricsContent));
@@ -390,8 +413,10 @@ public partial class DashboardViewModel : PageViewModelBase
         OnPropertyChanged(nameof(CanToggleConnection));
         OnPropertyChanged(nameof(ConnectionToggleToolTip));
         OnPropertyChanged(nameof(CanUseDashboardControls));
+        OnPropertyChanged(nameof(CanToggleTunInbound));
         OnPropertyChanged(nameof(LocalOnlyAccessToolTip));
         OnPropertyChanged(nameof(LanAccessToolTip));
+        RefreshConnectivityCommand.NotifyCanExecuteChanged();
     }
 
     public DashboardViewModel()
@@ -403,6 +428,7 @@ public partial class DashboardViewModel : PageViewModelBase
         AvailableProfiles.CollectionChanged += OnAvailableProfilesCollectionChanged;
         _localizationService.LanguageChanged += (_, _) =>
         {
+            OnPropertyChanged(nameof(StatusText));
             OnPropertyChanged(nameof(ConnectionToggleToolTip));
             OnPropertyChanged(nameof(LocalOnlyAccessToolTip));
             OnPropertyChanged(nameof(LanAccessToolTip));
@@ -438,6 +464,7 @@ public partial class DashboardViewModel : PageViewModelBase
         _singBoxManager.StatusChanged += OnStatusChanged;
         _singBoxManager.TrafficUpdated += OnTrafficUpdated;
         _singBoxManager.MemoryUpdated += OnMemoryUpdated;
+        KernelStatus = _singBoxManager.State.Status;
         _ = LoadProfilesAsync();
         _ = RefreshKernelVersionAsync();
         if (_singBoxManager.IsRunning)
@@ -476,16 +503,9 @@ public partial class DashboardViewModel : PageViewModelBase
     {
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
         {
-            IsConnected = status == ServiceStatus.Running;
-            StatusText = status switch
-            {
-                ServiceStatus.Running => _localizationService["Status.Connected"],
-                ServiceStatus.Starting => _localizationService["Status.Starting"],
-                ServiceStatus.Stopping => _localizationService["Status.Stopping"],
-                ServiceStatus.Error => _localizationService["Status.Error"],
-                _ => _localizationService["Status.Disconnected"]
-            };
+            KernelStatus = status;
             OnPropertyChanged(nameof(CanUseDashboardControls));
+            OnPropertyChanged(nameof(CanToggleTunInbound));
             OnPropertyChanged(nameof(ShowTerminalProxyButtons));
 
             if (status == ServiceStatus.Error)
@@ -748,6 +768,8 @@ public partial class DashboardViewModel : PageViewModelBase
         if (success)
         {
             ApplyRunningSystemProxy(EnableSystemProxy);
+            _runningProfileId = target.Id;
+            _runningSourceConfigPath = configPath;
             if (deferredRefresh)
             {
                 _ = RefreshRemoteProfileAfterStartAsync(profile, target.Name, port);
@@ -768,7 +790,198 @@ public partial class DashboardViewModel : PageViewModelBase
         StartupStatus = _localizationService["Status.Stopping"];
         LogInfo("Stopping sing-box");
         await _singBoxManager.StopAsync();
+        ClearRunningProfileState();
         StartupStatus = string.Empty;
+    }
+
+    private async Task RestartForTunToggleAsync(bool targetValue, bool previousValue)
+    {
+        var timing = Stopwatch.StartNew();
+        LogTiming($"tun_restart.begin tun={targetValue}");
+        if (_singBoxManager == null ||
+            _profileManager == null ||
+            _configManager == null ||
+            _runtimeOperation != DashboardRuntimeOperation.None)
+        {
+            LogTiming($"tun_restart.skipped {timing.Elapsed.TotalMilliseconds:F0}ms");
+            return;
+        }
+
+        SetRuntimeOperation(DashboardRuntimeOperation.RestartingForTunChange);
+        try
+        {
+            var profileId = _runningProfileId ?? SelectedStartupProfile?.Id;
+            if (profileId == null)
+            {
+                await RevertTunToggleAsync(previousValue);
+                StartupStatus = GetString("Dashboard.Startup.NoProfileAvailable", "No profile available");
+                LogError("Failed to restart for TUN toggle: no running profile");
+                LogTiming($"tun_restart.failed_no_profile {timing.Elapsed.TotalMilliseconds:F0}ms");
+                return;
+            }
+
+            var prepareTiming = Stopwatch.StartNew();
+            CommitInboundPortEdit();
+            if (!TryGetValidatedPort(out var port, out var validationError))
+            {
+                await RevertTunToggleAsync(previousValue);
+                StartupStatus = validationError;
+                LogError(validationError);
+                LogTiming($"tun_restart.failed_invalid_port {timing.Elapsed.TotalMilliseconds:F0}ms");
+                return;
+            }
+
+            PersistRuntimePort(port);
+
+            var profile = await _profileManager.GetAsync(profileId.Value);
+            if (profile == null)
+            {
+                await RevertTunToggleAsync(previousValue);
+                StartupStatus = GetString("Dashboard.Startup.ProfileNotFound", "Profile not found");
+                LogError($"Failed to restart for TUN toggle: profile not found: {profileId.Value}");
+                LogTiming($"tun_restart.failed_profile_not_found {timing.Elapsed.TotalMilliseconds:F0}ms");
+                return;
+            }
+
+            var sourceConfigPath = _runningSourceConfigPath;
+            if (string.IsNullOrWhiteSpace(sourceConfigPath) || !File.Exists(sourceConfigPath))
+            {
+                sourceConfigPath = await _configManager.GetConfigPathAsync(profile.Id, profile.Type);
+            }
+
+            if (string.IsNullOrWhiteSpace(sourceConfigPath) || !File.Exists(sourceConfigPath))
+            {
+                await RevertTunToggleAsync(previousValue);
+                StartupStatus = _localizationService["Status.ConfigMissing"];
+                LogError($"Failed to restart for TUN toggle: config not found for profile {profile.Id}");
+                LogTiming($"tun_restart.failed_config_missing {timing.Elapsed.TotalMilliseconds:F0}ms");
+                return;
+            }
+            LogTiming($"tun_restart.prepare {prepareTiming.Elapsed.TotalMilliseconds:F0}ms");
+
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && targetValue
+                && !await _singBoxManager.IsLinuxCoreAuthorizedAsync())
+            {
+                var password = await ShowLinuxPasswordDialogAsync();
+                if (password == null)
+                {
+                    await RevertTunToggleAsync(previousValue);
+                    StartupStatus = string.Empty;
+                    return;
+                }
+
+                var (authSuccess, authError) = await _singBoxManager.AuthorizeCoreOnLinuxAsync(password);
+                if (!authSuccess)
+                {
+                    await RevertTunToggleAsync(previousValue);
+                    StartupStatus = GetString("Dashboard.Auth.Failed", "Failed to authorize kernel");
+                    LogError($"Linux kernel authorization failed during TUN toggle: {authError}");
+                    return;
+                }
+            }
+
+            var runtimeConfigPath = await BuildRuntimeConfigAsync(sourceConfigPath, profile.Id, port);
+            LogTiming($"tun_restart.build_runtime_config {timing.Elapsed.TotalMilliseconds:F0}ms");
+            if (string.IsNullOrWhiteSpace(runtimeConfigPath))
+            {
+                await RevertTunToggleAsync(previousValue);
+                return;
+            }
+
+            StartupStatus = GetString("Dashboard.Status.RestartingForTun", "Restarting kernel to apply TUN change...");
+            LogInfo($"Restarting sing-box to apply TUN change: tun={targetValue}");
+
+            var stopTiming = Stopwatch.StartNew();
+            await _singBoxManager.StopAsync();
+            LogTiming($"tun_restart.stop {stopTiming.Elapsed.TotalMilliseconds:F0}ms");
+            var startTiming = Stopwatch.StartNew();
+            var success = await _singBoxManager.StartAsync(runtimeConfigPath);
+            LogTiming($"tun_restart.start {startTiming.Elapsed.TotalMilliseconds:F0}ms");
+            if (success)
+            {
+                ApplyRunningSystemProxy(EnableSystemProxy);
+                _runningProfileId = profile.Id;
+                _runningSourceConfigPath = sourceConfigPath;
+                StartupStatus = string.Empty;
+                LogTiming($"tun_restart.end_success {timing.Elapsed.TotalMilliseconds:F0}ms");
+                return;
+            }
+
+            LogError(BuildStartFailureStatus());
+            await RestoreTunToggleAfterRestartFailureAsync(previousValue, sourceConfigPath, profile, port);
+            LogTiming($"tun_restart.end_restore_attempted {timing.Elapsed.TotalMilliseconds:F0}ms");
+        }
+        finally
+        {
+            SetRuntimeOperation(DashboardRuntimeOperation.None);
+        }
+    }
+
+    private async Task RestoreTunToggleAfterRestartFailureAsync(bool previousValue, string sourceConfigPath, Profile profile, int port)
+    {
+        await RevertTunToggleAsync(previousValue);
+        var failedStatus = BuildStartFailureStatus();
+        LogWarning($"TUN toggle restart failed, attempting to restore previous state: {failedStatus}");
+
+        var fallbackConfigPath = await BuildRuntimeConfigAsync(sourceConfigPath, profile.Id, port);
+        if (string.IsNullOrWhiteSpace(fallbackConfigPath))
+        {
+            StartupStatus = failedStatus;
+            return;
+        }
+
+        var restored = await _singBoxManager!.StartAsync(fallbackConfigPath);
+        if (restored)
+        {
+            ApplyRunningSystemProxy(EnableSystemProxy);
+            _runningProfileId = profile.Id;
+            _runningSourceConfigPath = sourceConfigPath;
+            StartupStatus = GetString("Dashboard.Status.TunRestartFailedRestored", "Failed to apply TUN change; restored previous running state.");
+            LogWarning(StartupStatus);
+            _toastWriter?.Invoke(StartupStatus, 3200);
+            return;
+        }
+
+        ClearRunningProfileState();
+        StartupStatus = failedStatus;
+    }
+
+    private async Task RevertTunToggleAsync(bool previousValue)
+    {
+        _suppressRuntimeOptionUpdates = true;
+        _runtimeOptions.EnableTunInbound = previousValue;
+        EnableTunInbound = previousValue;
+        _suppressRuntimeOptionUpdates = false;
+
+        if (_profileManager != null && SelectedStartupProfile != null)
+        {
+            var snapshot = CopyRuntimeOptions(_runtimeOptions);
+            await _profileManager.SaveRuntimeOptionsAsync(SelectedStartupProfile.Id, snapshot);
+        }
+    }
+
+    private void SetRuntimeOperation(DashboardRuntimeOperation operation)
+    {
+        if (_runtimeOperation == operation)
+        {
+            return;
+        }
+
+        _runtimeOperation = operation;
+        OnPropertyChanged(nameof(CanUseDashboardControls));
+        OnPropertyChanged(nameof(CanToggleTunInbound));
+    }
+
+    [Conditional("DEBUG")]
+    private void LogTiming(string message)
+    {
+        LogInfo($"[TIMING] {message}");
+    }
+
+    private void ClearRunningProfileState()
+    {
+        _runningProfileId = null;
+        _runningSourceConfigPath = null;
     }
 
     [RelayCommand]
@@ -1931,6 +2144,12 @@ public partial class DashboardClashModeOptionViewModel : ObservableObject
 }
 
 internal sealed record DashboardSiteStatusDefinition(string Name, string Url);
+
+internal enum DashboardRuntimeOperation
+{
+    None,
+    RestartingForTunChange
+}
 
 public partial class DashboardSiteStatusItemViewModel : ObservableObject
 {

@@ -8,6 +8,8 @@ namespace carton.Core.Services;
 
 public partial class SingBoxManager
 {
+    private static readonly TimeSpan LocalApiProbeTimeout = TimeSpan.FromSeconds(1);
+
     private bool RequiresElevatedPrivileges(string configPath)
     {
         try
@@ -43,6 +45,8 @@ public partial class SingBoxManager
 
     private async Task<bool> StartElevatedAsync(string configPath)
     {
+        var timing = Stopwatch.StartNew();
+        LogTiming("start_elevated.begin");
         try
         {
             await StopElevatedLogTailAsync();
@@ -51,7 +55,11 @@ public partial class SingBoxManager
             var elevatedLogPath = Path.Combine(_workingDirectory, "logs", logFileName);
             Directory.CreateDirectory(Path.GetDirectoryName(elevatedLogPath)!);
 
+            var startProcessTiming = Stopwatch.StartNew();
             var result = await StartElevatedProcessForCurrentPlatformAsync(configPath, elevatedLogPath);
+            LogTiming(
+                result.Success ? "start_elevated.process_request_success" : "start_elevated.process_request_failed",
+                startProcessTiming.Elapsed);
             if (!result.Success)
             {
                 var msg = string.IsNullOrWhiteSpace(result.ErrorMessage) ? "Elevated start failed" : result.ErrorMessage;
@@ -80,9 +88,11 @@ public partial class SingBoxManager
             _elevatedLogPath = elevatedLogPath;
             StartElevatedLogTail(elevatedLogPath);
 
+            var readyTiming = Stopwatch.StartNew();
             var ready = await WaitForApiReadyAsync(
                 pid,
                 TimeSpan.FromSeconds(30));
+            LogTiming(ready ? "start_elevated.api_ready" : "start_elevated.api_not_ready", readyTiming.Elapsed);
             if (!ready)
             {
                 var recentLog = await ReadRecentLogLinesAsync(elevatedLogPath, 20);
@@ -103,6 +113,7 @@ public partial class SingBoxManager
             UpdateStatus(ServiceStatus.Running);
             LogManager($"[INFO] sing-box started successfully (elevated, pid={_elevatedPid})");
             EnsureRuntimeMonitorsRunning();
+            LogTiming("start_elevated.end_success", timing.Elapsed);
             return true;
         }
         catch (Exception ex)
@@ -111,47 +122,99 @@ public partial class SingBoxManager
             LogManager($"[ERROR] {error}");
             await CleanupFailedStartAttemptAsync();
             SetError(error);
+            LogTiming("start_elevated.end_exception", timing.Elapsed);
             return false;
         }
     }
 
     private async Task<bool> StopElevatedAsync()
     {
+        var timing = Stopwatch.StartNew();
+        LogTiming("stop_elevated.begin");
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && !_elevatedPid.HasValue)
         {
-            if (await TryStopViaWindowsElevatedHelperAsync(force: false))
+            var helperStopTiming = Stopwatch.StartNew();
+            var helperStopResult = await TryStopViaWindowsElevatedHelperAsync(force: false);
+            if (helperStopResult == WindowsHelperStopResult.Success)
             {
+                LogTiming("stop_elevated.helper_stop_without_pid", helperStopTiming.Elapsed);
                 await Task.Delay(500);
+                LogTiming("stop_elevated.end_success", timing.Elapsed);
                 return true;
             }
+            LogTiming(
+                helperStopResult == WindowsHelperStopResult.EndpointUnavailable
+                    ? "stop_elevated.helper_unavailable_without_pid"
+                    : "stop_elevated.helper_stop_failed_without_pid",
+                helperStopTiming.Elapsed);
 
             WriteStopSignalFile();
+            if (helperStopResult == WindowsHelperStopResult.EndpointUnavailable)
+            {
+                InvalidateWindowsElevatedHelperSession();
+            }
             await Task.Delay(1500);
+            LogTiming("stop_elevated.signal_file_without_pid", timing.Elapsed);
             return true;
         }
 
         if (!_elevatedPid.HasValue)
         {
+            LogTiming("stop_elevated.no_pid", timing.Elapsed);
             return true;
         }
 
         var pid = _elevatedPid.Value;
+        var usedWindowsHelperEndpoint = false;
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            if (await TryStopViaWindowsElevatedHelperAsync(force: true))
+            var helperStopTiming = Stopwatch.StartNew();
+            var helperStopResult = await TryStopViaWindowsElevatedHelperAsync(force: true);
+            if (helperStopResult == WindowsHelperStopResult.Success)
             {
+                usedWindowsHelperEndpoint = true;
+                LogTiming("stop_elevated.helper_force_stop_returned", helperStopTiming.Elapsed);
                 await Task.Delay(250);
                 if (!IsProcessAlive(pid))
                 {
+                    LogTiming("stop_elevated.end_success", timing.Elapsed);
                     return true;
                 }
 
                 LogManager($"[WARN] Elevated helper stop returned before sing-box process {pid} exited");
             }
+            else
+            {
+                LogTiming(
+                    helperStopResult == WindowsHelperStopResult.EndpointUnavailable
+                        ? "stop_elevated.helper_unavailable"
+                        : "stop_elevated.helper_stop_failed",
+                    helperStopTiming.Elapsed);
+            }
 
             // Fallback to file-based signal if the helper endpoint is unavailable.
             WriteStopSignalFile();
+            if (helperStopResult == WindowsHelperStopResult.EndpointUnavailable)
+            {
+                InvalidateWindowsElevatedHelperSession();
+                var freshHelperStopTiming = Stopwatch.StartNew();
+                if (await TryStopViaFreshWindowsElevatedHelperAsync(pid, force: true))
+                {
+                    LogTiming("stop_elevated.fresh_helper_force_stop_returned", freshHelperStopTiming.Elapsed);
+                    usedWindowsHelperEndpoint = true;
+                    await Task.Delay(250);
+                    if (!IsProcessAlive(pid))
+                    {
+                        LogTiming("stop_elevated.end_success", timing.Elapsed);
+                        return true;
+                    }
+                }
+                else
+                {
+                    LogTiming("stop_elevated.fresh_helper_stop_failed", freshHelperStopTiming.Elapsed);
+                }
+            }
         }
         else
         {
@@ -168,13 +231,21 @@ public partial class SingBoxManager
             await Task.Delay(waitDelay);
             if (!IsProcessAlive(pid))
             {
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) &&
+                    !usedWindowsHelperEndpoint &&
+                    string.IsNullOrWhiteSpace(_windowsElevatedHelperToken))
+                {
+                    InvalidateWindowsElevatedHelperSession();
+                }
+
+                LogTiming("stop_elevated.process_exit_wait", timing.Elapsed);
                 return true;
             }
         }
 
         LogManager($"[WARN] sing-box process {pid} did not exit, trying force kill...");
 
-        // Fallback: try taskkill via UAC
+        // Last resort: try taskkill via UAC.
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             var taskkillArgs = $"/PID {pid} /T /F";
@@ -194,9 +265,18 @@ public partial class SingBoxManager
         if (IsProcessAlive(pid))
         {
             LogManager($"[ERROR] sing-box process {pid} is still running after stop attempts");
+            LogTiming("stop_elevated.end_failed", timing.Elapsed);
             return false;
         }
 
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) &&
+            !usedWindowsHelperEndpoint &&
+            string.IsNullOrWhiteSpace(_windowsElevatedHelperToken))
+        {
+            InvalidateWindowsElevatedHelperSession();
+        }
+
+        LogTiming("stop_elevated.end_success_after_force", timing.Elapsed);
         return true;
     }
 
@@ -205,15 +285,22 @@ public partial class SingBoxManager
         TimeSpan timeout)
     {
         _lastStartupWaitFailureReason = null;
+        var timing = Stopwatch.StartNew();
         var start = DateTime.UtcNow;
         var noProcessStatusCount = 0;
+        var shouldQueryHelperStatus =
+            RuntimeInformation.IsOSPlatform(OSPlatform.Windows) &&
+            !string.IsNullOrWhiteSpace(_windowsElevatedHelperToken) &&
+            (_process == null || elevatedPid.HasValue || _elevatedPid.HasValue);
         LogManager($"[INFO] Waiting for sing-box API to become ready (timeout={timeout.TotalSeconds}s)...");
         var attempt = 0;
         while (DateTime.UtcNow - start < timeout)
         {
             attempt++;
 
-            var helperProcessStatus = await TryGetWindowsHelperProcessStatusAsync();
+            var helperProcessStatus = shouldQueryHelperStatus
+                ? await TryGetWindowsHelperProcessStatusAsync()
+                : null;
             if (helperProcessStatus != null)
             {
                 if ((!elevatedPid.HasValue || elevatedPid.Value <= 0) && helperProcessStatus.Pid is > 0)
@@ -236,6 +323,7 @@ public partial class SingBoxManager
 
                 if (helperProcessStatus.ApiReady)
                 {
+                    LogTiming("api_ready.helper_status", timing.Elapsed);
                     return true;
                 }
 
@@ -257,8 +345,8 @@ public partial class SingBoxManager
 
             try
             {
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-                using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+                using var cts = new CancellationTokenSource(LocalApiProbeTimeout);
+                using var client = HttpClientFactory.CreateLocalApiProbeClient(LocalApiProbeTimeout);
                 using var response = await client.GetAsync($"{_apiAddress}/version", cts.Token);
                 LogManager($"[INFO] API responded with status {(int)response.StatusCode}");
 
@@ -271,6 +359,7 @@ public partial class SingBoxManager
                         _elevatedPid = discoveredPid.Value;
                     }
                 }
+                LogTiming("api_ready.http_version", timing.Elapsed);
                 return true;
             }
             catch
@@ -314,6 +403,7 @@ public partial class SingBoxManager
 
         LogManager($"[WARN] API did not become ready within {timeout.TotalSeconds}s");
         _lastStartupWaitFailureReason = "sing-box API did not become reachable in time";
+        LogTiming("api_ready.timeout", timing.Elapsed);
         return false;
     }
 
@@ -359,7 +449,7 @@ public partial class SingBoxManager
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            if (await TryStopViaWindowsElevatedHelperAsync(force))
+            if (await TryStopViaWindowsElevatedHelperAsync(force) == WindowsHelperStopResult.Success)
             {
                 return;
             }
