@@ -222,6 +222,10 @@
 	<x:String x:Key="Settings.General.StartHiddenAtLogin">Start hidden to tray at login</x:String>
 	<x:String x:Key="Settings.General.AutoStartOnLaunch">Auto start kernel when Carton opens</x:String>
 	<x:String x:Key="Settings.General.AutoDisconnectConnectionsOnNodeSwitch">Auto disconnect connections on node switch (extra API interrupt)</x:String>
+	<x:String x:Key="Settings.General.GitHubUpdateCheckStrategy">GitHub update check strategy</x:String>
+	<x:String x:Key="Settings.General.GitHubUpdateCheckStrategy.Description">Applies to Carton and kernel update checks.</x:String>
+	<x:String x:Key="Settings.General.GitHubUpdateCheckStrategy.ApiThenAtom">Prefer API, fallback to releases.atom</x:String>
+	<x:String x:Key="Settings.General.GitHubUpdateCheckStrategy.ApiOnly">API only</x:String>
 	<x:String x:Key="Settings.General.RemoteConfigProxy">Use proxy for remote config updates</x:String>
 	<x:String x:Key="Settings.General.RemoteConfigProxy.Description">Takes effect after sing-box starts.</x:String>
 	<x:String x:Key="Settings.General.CustomUserAgent">Custom User-Agent for subscription downloads</x:String>

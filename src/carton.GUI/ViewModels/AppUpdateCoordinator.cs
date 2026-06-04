@@ -132,9 +132,15 @@ public partial class AppUpdateCoordinator : ObservableObject
 
     public void Configure(string channel)
     {
+        var normalized = NormalizeUpdateChannel(channel);
+        var changed = !string.Equals(SelectedUpdateChannel, normalized, StringComparison.Ordinal);
         _suppressChannelNormalization = true;
-        SelectedUpdateChannel = NormalizeUpdateChannel(channel);
+        SelectedUpdateChannel = normalized;
         _suppressChannelNormalization = false;
+        if (changed)
+        {
+            ResetAvailableStateForChannelChange();
+        }
     }
 
     public void RefreshLocalizedTexts()
@@ -202,6 +208,7 @@ public partial class AppUpdateCoordinator : ObservableObject
         }
 
         IsCheckingAppUpdate = true;
+        var checkedChannel = SelectedUpdateChannel;
         ShowStartupUpdateDialog = false;
         _isLatestAppVersion = false;
         AppUpdateStatus = GetString("Settings.Update.Status.Checking", "Checking for updates...");
@@ -209,12 +216,17 @@ public partial class AppUpdateCoordinator : ObservableObject
         {
             if (_requiresManualAppUpdate)
             {
-                var latestRelease = await _appUpdateService.GetLatestReleaseInfoAsync(SelectedUpdateChannel);
+                var latestRelease = await _appUpdateService.GetLatestReleaseInfoAsync(checkedChannel);
+                if (!IsCurrentChannel(checkedChannel))
+                {
+                    return;
+                }
+
                 if (latestRelease == null)
                 {
                     ClearAvailableUpdateState();
                     AppUpdateStatus =
-                        $"{GetString("Settings.Update.Status.Error", "Update failed")}: no release found for channel '{SelectedUpdateChannel}'";
+                        $"{GetString("Settings.Update.Status.Error", "Update failed")}: no release found for channel '{checkedChannel}'";
                     return;
                 }
 
@@ -240,7 +252,12 @@ public partial class AppUpdateCoordinator : ObservableObject
                 return;
             }
 
-            var result = await _appUpdateService.CheckForUpdatesAsync(SelectedUpdateChannel);
+            var result = await _appUpdateService.CheckForUpdatesAsync(checkedChannel);
+            if (!IsCurrentChannel(checkedChannel))
+            {
+                return;
+            }
+
             if (result == null)
             {
                 _pendingAppUpdate = null;
@@ -276,6 +293,11 @@ public partial class AppUpdateCoordinator : ObservableObject
         }
         catch (Exception ex)
         {
+            if (!IsCurrentChannel(checkedChannel))
+            {
+                return;
+            }
+
             ClearAvailableUpdateState();
             _isLatestAppVersion = false;
             IsAppUpdateReadyToInstall = false;
@@ -660,6 +682,9 @@ public partial class AppUpdateCoordinator : ObservableObject
         ClearAvailableUpdateState();
         AppUpdateStatus = string.Empty;
     }
+
+    private bool IsCurrentChannel(string channel)
+        => string.Equals(SelectedUpdateChannel, channel, StringComparison.OrdinalIgnoreCase);
 
     private void ResetDownloadProgress()
     {

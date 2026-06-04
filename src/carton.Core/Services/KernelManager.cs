@@ -3,7 +3,6 @@ using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics.X86;
 using System.Text.RegularExpressions;
-using System.Xml.Linq;
 using carton.Core.Models;
 using carton.Core.Utilities;
 
@@ -53,6 +52,7 @@ public class KernelManager : IKernelManager
     private readonly string _builtinKernelPath;
     private readonly HttpClient _httpClient = HttpClientFactory.External;
     private readonly AcceleratedFileDownloader _fileDownloader;
+    private readonly IGitHubUpdateCheckStrategyProvider _githubUpdateCheckStrategyProvider;
     private KernelInfo? _installedKernel;
 
     public event EventHandler<DownloadProgress>? DownloadProgressChanged;
@@ -63,17 +63,20 @@ public class KernelManager : IKernelManager
     public bool IsKernelInstalled => ResolveActiveKernel() != null;
     public string KernelPath => ResolveActiveKernel()?.Path ?? _dataKernelPath;
 
+    private static readonly TimeSpan GitHubApiPreferredWait = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan GitHubLookupTimeout = TimeSpan.FromSeconds(6);
     private const string GitHubDownloadUrl = "https://github.com/SagerNet/sing-box/releases/download";
-    private const string GitHubReleasesPageUrl = "https://github.com/SagerNet/sing-box/releases";
     private const string GitHubReleasesAtomUrl = "https://github.com/SagerNet/sing-box/releases.atom";
 
     private const string Ref1ndDownloadUrl = "https://github.com/reF1nd/sing-box-releases/releases/download";
-    private const string Ref1ndReleasesPageUrl = "https://github.com/reF1nd/sing-box-releases/releases";
     private const string Ref1ndReleasesAtomUrl = "https://github.com/reF1nd/sing-box-releases/releases.atom";
 
-    public KernelManager(string baseDirectory)
+    public KernelManager(
+        string baseDirectory,
+        IGitHubUpdateCheckStrategyProvider? githubUpdateCheckStrategyProvider = null)
     {
+        _githubUpdateCheckStrategyProvider = githubUpdateCheckStrategyProvider ??
+                                             new StaticGitHubUpdateCheckStrategyProvider(GitHubUpdateCheckStrategy.ApiThenAtom);
         _dataBinDirectory = Path.Combine(baseDirectory, "bin");
         var platform = PlatformInfo.Current;
         var fileName = $"sing-box{platform.Suffix}";
@@ -322,7 +325,9 @@ public class KernelManager : IKernelManager
             if (mirror is DownloadMirror.Ref1ndStable or DownloadMirror.Ref1ndTest)
             {
                 var platform = PlatformInfo.Current;
-                var ref1ndTag = await GetLatestRef1ndVersionAsync(mirror);
+                var ref1ndTag = string.IsNullOrWhiteSpace(version)
+                    ? await GetLatestRef1ndVersionAsync(mirror)
+                    : version;
                 if (string.IsNullOrWhiteSpace(ref1ndTag))
                 {
                     StatusChanged?.Invoke(this, "Failed to get latest version");
@@ -446,24 +451,27 @@ public class KernelManager : IKernelManager
         => mirror is DownloadMirror.GitHubPreRelease or DownloadMirror.GhProxyPreRelease;
 
     private async Task<string?> GetLatestOfficialReleaseVersionAsync()
-        => await GetLatestVersionFromReleaseFeedAsync(
+        => await GetLatestGitHubReleaseVersionAsync(
+            "SagerNet",
+            "sing-box",
             GitHubReleasesAtomUrl,
-            GitHubReleasesPageUrl,
             wantPrerelease: false);
 
     private async Task<string?> GetLatestOfficialPreReleaseVersionAsync()
-        => await GetLatestVersionFromReleaseFeedAsync(
+        => await GetLatestGitHubReleaseVersionAsync(
+            "SagerNet",
+            "sing-box",
             GitHubReleasesAtomUrl,
-            GitHubReleasesPageUrl,
             wantPrerelease: true);
 
     private async Task<string?> GetLatestRef1ndVersionAsync(DownloadMirror mirror)
     {
         var wantPrerelease = mirror == DownloadMirror.Ref1ndTest;
 
-        return await GetLatestVersionFromReleaseFeedAsync(
+        return await GetLatestGitHubReleaseVersionAsync(
+            "reF1nd",
+            "sing-box-releases",
             Ref1ndReleasesAtomUrl,
-            Ref1ndReleasesPageUrl,
             wantPrerelease);
     }
 
@@ -556,136 +564,20 @@ public class KernelManager : IKernelManager
         return Path.GetExtension(assetName);
     }
 
-    private async Task<string?> GetLatestVersionFromReleasesPageAsync(string releasesPageUrl, bool wantPrerelease)
-    {
-        var html = await GetStringWithGitHubLookupTimeoutAsync(releasesPageUrl);
-        var matches = Regex.Matches(
-            html,
-            @"/releases/tag/(?<tag>[^""#?&/]+)",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-        if (matches.Count == 0)
-        {
-            return null;
-        }
-
-        var seenTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (Match match in matches)
-        {
-            var tag = Uri.UnescapeDataString(match.Groups["tag"].Value);
-            if (string.IsNullOrWhiteSpace(tag) || !seenTags.Add(tag))
-            {
-                continue;
-            }
-
-            if (wantPrerelease == IsLikelyPrereleaseTag(tag))
-            {
-                return tag;
-            }
-        }
-
-        return null;
-    }
-
-    private async Task<string?> GetLatestVersionFromReleaseFeedAsync(
-        string atomFeedUrl,
-        string releasesPageUrl,
+    private async Task<string?> GetLatestGitHubReleaseVersionAsync(
+        string owner,
+        string repository,
+        string atomUrl,
         bool wantPrerelease)
     {
-        try
-        {
-            var atom = await GetStringWithGitHubLookupTimeoutAsync(atomFeedUrl);
-            foreach (var release in ParseReleaseAtomFeed(atom))
-            {
-                if (string.IsNullOrWhiteSpace(release.Tag))
-                {
-                    continue;
-                }
-
-                if (MatchesPrereleasePreference(release, wantPrerelease))
-                {
-                    return release.Tag;
-                }
-            }
-        }
-        catch
-        {
-        }
-
-        return await GetLatestVersionFromReleasesPageAsync(releasesPageUrl, wantPrerelease);
-    }
-
-    private static IEnumerable<GitHubAtomRelease> ParseReleaseAtomFeed(string atom)
-    {
-        var document = XDocument.Parse(atom);
-        XNamespace atomNamespace = "http://www.w3.org/2005/Atom";
-
-        foreach (var entry in document.Descendants(atomNamespace + "entry"))
-        {
-            var tag = TryExtractReleaseTag(entry.Element(atomNamespace + "id")?.Value);
-            foreach (var link in entry.Elements(atomNamespace + "link"))
-            {
-                var href = link.Attribute("href")?.Value;
-                tag ??= TryExtractReleaseTag(href);
-            }
-
-            if (string.IsNullOrWhiteSpace(tag))
-            {
-                continue;
-            }
-
-            yield return new GitHubAtomRelease(
-                tag,
-                entry.Element(atomNamespace + "title")?.Value ?? string.Empty);
-        }
-    }
-
-    private static string? TryExtractReleaseTag(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return null;
-        }
-
-        var match = Regex.Match(
-            value,
-            @"/releases/tag/(?<tag>[^#?&/]+)",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-        return match.Success
-            ? Uri.UnescapeDataString(match.Groups["tag"].Value)
-            : null;
-    }
-
-    private static bool MatchesPrereleasePreference(GitHubAtomRelease release, bool wantPrerelease)
-    {
-        var isPrerelease = IsLikelyPrereleaseTag(release.Tag) || IsLikelyPrereleaseTag(release.Title);
-        return wantPrerelease == isPrerelease;
-    }
-
-    private static bool IsLikelyPrereleaseTag(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return false;
-        }
-
-        return Regex.IsMatch(
-            value,
-            @"(?:^|[.\-_])(?:alpha|beta|preview|pre|rc)(?:[.\-_]?\d+)?(?:$|[.\-_])",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-    }
-
-    private async Task<HttpResponseMessage> SendWithGitHubLookupTimeoutAsync(HttpRequestMessage request)
-    {
-        using var timeoutCts = new CancellationTokenSource(GitHubLookupTimeout);
-        return await _httpClient.SendAsync(request, timeoutCts.Token);
-    }
-
-    private async Task<string> GetStringWithGitHubLookupTimeoutAsync(string url)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        using var response = await SendWithGitHubLookupTimeoutAsync(request);
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStringAsync();
+        var source = new PreferredGitHubReleaseSource(
+            new GitHubApiReleaseSource(_httpClient, owner, repository),
+            new GitHubAtomReleaseSource(_httpClient, atomUrl),
+            GitHubApiPreferredWait,
+            GitHubLookupTimeout,
+            _githubUpdateCheckStrategyProvider);
+        var release = await source.GetLatestReleaseAsync(wantPrerelease);
+        return release?.Tag;
     }
 
     /// <summary>
@@ -869,7 +761,6 @@ public class KernelManager : IKernelManager
            fileName.EndsWith(".dll", StringComparison.OrdinalIgnoreCase);
 
     private sealed record ActiveKernelCandidate(string Path, bool IsBuiltin);
-    private sealed record GitHubAtomRelease(string Tag, string Title);
 
     public async Task<bool> InstallCustomKernelAsync(string sourcePath)
     {

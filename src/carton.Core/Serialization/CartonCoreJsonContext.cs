@@ -10,6 +10,7 @@ namespace carton.Core.Serialization;
     GenerationMode = JsonSourceGenerationMode.Metadata | JsonSourceGenerationMode.Serialization)]
 [JsonSerializable(typeof(AppPreferences))]
 [JsonSerializable(typeof(AppTheme))]
+[JsonSerializable(typeof(GitHubUpdateCheckStrategy))]
 [JsonSerializable(typeof(Profile))]
 [JsonSerializable(typeof(ProfileRuntimeOptions))]
 [JsonSerializable(typeof(SingBoxData))]

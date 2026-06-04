@@ -9,6 +9,7 @@ public class AppPreferences
     public bool AutoDisconnectConnectionsOnNodeSwitch { get; set; } = false;
     public bool UseProxyForRemoteConfigUpdates { get; set; }
     public string CustomUserAgent { get; set; } = string.Empty;
+    public GitHubUpdateCheckStrategy GitHubUpdateCheckStrategy { get; set; } = GitHubUpdateCheckStrategy.ApiThenAtom;
     public KernelCacheCleanupPolicy KernelCacheCleanupPolicy { get; set; } = KernelCacheCleanupPolicy.ClearOnChannelChange;
     public KernelInstallChannel? LastInstalledKernelChannel { get; set; }
     public AppTheme Theme { get; set; } = AppTheme.System;
@@ -24,6 +25,12 @@ public enum KernelCacheCleanupPolicy
 {
     ClearOnChannelChange = 0,
     Never = 1
+}
+
+public enum GitHubUpdateCheckStrategy
+{
+    ApiThenAtom = 0,
+    ApiOnly = 1
 }
 
 public enum KernelInstallChannel

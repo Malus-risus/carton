@@ -576,6 +576,26 @@
         <Border Classes="settingsItem">
           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
             <StackPanel Spacing="3">
+              <TextBlock Classes="settingsTitle" Text="{DynamicResource Settings.General.GitHubUpdateCheckStrategy}"/>
+              <TextBlock Classes="settingsDescription" Text="{DynamicResource Settings.General.GitHubUpdateCheckStrategy.Description}"/>
+            </StackPanel>
+            <ComboBox Grid.Column="1"
+                      Classes="settingsAction"
+                      MinWidth="220"
+                      ItemsSource="{Binding GitHubUpdateCheckStrategies}"
+                      SelectedItem="{Binding SelectedGitHubUpdateCheckStrategy}"
+                      VerticalAlignment="Center">
+              <ComboBox.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding Converter={StaticResource GitHubUpdateCheckStrategyDisplayConverter}}"/>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </Grid>
+        </Border>
+        <Border Classes="settingsItem">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <StackPanel Spacing="3">
               <TextBlock Classes="settingsTitle" Text="{DynamicResource Settings.General.RemoteConfigProxy}"/>
               <TextBlock Classes="settingsDescription" Text="{DynamicResource Settings.General.RemoteConfigProxy.Description}"/>
             </StackPanel>

@@ -38,6 +38,7 @@ public partial class MainViewModel : ViewModelBase
     private bool _isWindowVisible = true;
     private bool _isSessionDurationRefreshActive;
     private bool _suppressPreferenceUpdates;
+    private DownloadMirror? _latestKernelVersionMirror;
     private int _sessionStartTimeMeasureHourDigits = 2;
     private bool _isInteractionBlocked;
     private string _interactionBlockedMessage = string.Empty;
@@ -124,6 +125,7 @@ public partial class MainViewModel : ViewModelBase
             return;
         }
 
+        _latestKernelVersionMirror = null;
         _currentPreferences.KernelDownloadMirror = value;
         _preferencesService.Save(_currentPreferences);
         _ = RefreshLatestKernelVersionAsync();
@@ -176,8 +178,9 @@ public partial class MainViewModel : ViewModelBase
         var workingDirectory = Path.Combine(appDataPath, "data");
         _configManager = new ConfigManager(workingDirectory);
         _profileManager = new ProfileManager(workingDirectory, _configManager);
-        _kernelManager = new KernelManager(appDataPath);
         _preferencesService = App.PreferencesService;
+        var githubUpdateCheckStrategyProvider = new PreferencesGitHubUpdateCheckStrategyProvider(_preferencesService);
+        _kernelManager = new KernelManager(appDataPath, githubUpdateCheckStrategyProvider);
         _localizationService = LocalizationService.Instance;
         _localizationService.LanguageChanged += OnLanguageChanged;
         NavigationItems = CreateNavigationItems();
@@ -199,7 +202,7 @@ public partial class MainViewModel : ViewModelBase
 
         DashboardViewModel = new DashboardViewModel(_singBoxManager, _kernelManager, _profileManager, _configManager, _preferencesService, ShowToast, _logStore.AddLog);
         _lazyGroupsViewModel = new Lazy<GroupsViewModel>(() => new GroupsViewModel(_singBoxManager, _preferencesService));
-        _appUpdateService = new AppUpdateService("https://github.com/821869798/carton", null, _logStore.AddLog);
+        _appUpdateService = new AppUpdateService("https://github.com/821869798/carton", null, _logStore.AddLog, githubUpdateCheckStrategyProvider);
         _appUpdateCoordinator = new AppUpdateCoordinator(_appUpdateService, _localizationService);
         _appUpdateCoordinator.PropertyChanged += OnAppUpdateCoordinatorPropertyChanged;
         _transientPageUnloadTimer = new DispatcherTimer
@@ -274,8 +277,9 @@ public partial class MainViewModel : ViewModelBase
 
         if (!IsKernelInstalled)
         {
-            var latestVersion = await _kernelManager.GetLatestVersionAsync(SelectedKernelDownloadMirror);
-            LatestVersion = latestVersion ?? "unknown";
+            var mirror = SelectedKernelDownloadMirror;
+            var latestVersion = await _kernelManager.GetLatestVersionAsync(mirror);
+            ApplyLatestKernelVersion(mirror, latestVersion);
             ShowKernelDialog = true;
         }
         else
@@ -872,8 +876,9 @@ public partial class MainViewModel : ViewModelBase
     {
         if (!IsKernelInstalled)
         {
-            var latestVersion = await _kernelManager.GetLatestVersionAsync(SelectedKernelDownloadMirror);
-            LatestVersion = latestVersion ?? "unknown";
+            var mirror = SelectedKernelDownloadMirror;
+            var latestVersion = await _kernelManager.GetLatestVersionAsync(mirror);
+            ApplyLatestKernelVersion(mirror, latestVersion);
             ConnectionStatus = GetMissingKernelStartMessage();
             ShowKernelDialog = true;
             return;
@@ -936,15 +941,45 @@ public partial class MainViewModel : ViewModelBase
             return;
         }
 
+        var mirror = SelectedKernelDownloadMirror;
         try
         {
-            var latestVersion = await _kernelManager.GetLatestVersionAsync(SelectedKernelDownloadMirror);
-            LatestVersion = latestVersion ?? "unknown";
+            var latestVersion = await _kernelManager.GetLatestVersionAsync(mirror);
+            if (mirror != SelectedKernelDownloadMirror)
+            {
+                return;
+            }
+
+            ApplyLatestKernelVersion(mirror, latestVersion);
         }
         catch
         {
-            LatestVersion = "unknown";
+            if (mirror == SelectedKernelDownloadMirror)
+            {
+                _latestKernelVersionMirror = null;
+                LatestVersion = "unknown";
+            }
         }
+    }
+
+    private void ApplyLatestKernelVersion(DownloadMirror mirror, string? latestVersion)
+    {
+        _latestKernelVersionMirror = string.IsNullOrWhiteSpace(latestVersion) ? null : mirror;
+        LatestVersion = latestVersion ?? "unknown";
+    }
+
+    private string? GetKnownLatestVersionForSelectedKernelMirror()
+    {
+        if (_latestKernelVersionMirror != SelectedKernelDownloadMirror)
+        {
+            return null;
+        }
+
+        var version = LatestVersion.Trim();
+        return string.IsNullOrWhiteSpace(version) ||
+               string.Equals(version, "unknown", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : version;
     }
 
     private void ApplyInstalledKernelInfo(KernelInfo? kernelInfo)
@@ -1063,7 +1098,7 @@ public partial class MainViewModel : ViewModelBase
         DownloadStatus = _localizationService["Status.KernelDownloading"];
         var hadInstalledKernel = _kernelManager.IsKernelInstalled;
 
-        var success = await _kernelManager.DownloadAndInstallAsync(null, SelectedKernelDownloadMirror);
+        var success = await _kernelManager.DownloadAndInstallAsync(GetKnownLatestVersionForSelectedKernelMirror(), SelectedKernelDownloadMirror);
 
         IsDownloadingKernel = false;
 

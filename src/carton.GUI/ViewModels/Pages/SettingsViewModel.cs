@@ -64,6 +64,7 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
     private AppUpdateCoordinator _appUpdate = new();
     private AppPreferences _currentPreferences = new();
     private KernelPackageDownloadResult? _pendingKernelPackage;
+    private DownloadMirror? _latestVersionMirror;
     private bool _suppressPreferenceUpdates;
     private bool _syncingThemeAccentColor;
 
@@ -130,6 +131,9 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
     private string _customUserAgent = string.Empty;
 
     [ObservableProperty]
+    private GitHubUpdateCheckStrategy _selectedGitHubUpdateCheckStrategy = GitHubUpdateCheckStrategy.ApiThenAtom;
+
+    [ObservableProperty]
     private KernelCacheCleanupPolicy _selectedKernelCacheCleanupPolicy = KernelCacheCleanupPolicy.ClearOnChannelChange;
 
     [ObservableProperty]
@@ -175,11 +179,19 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
         }
     }
     partial void OnCustomUserAgentChanged(string value) => UpdatePreference(p => p.CustomUserAgent = value);
+    partial void OnSelectedGitHubUpdateCheckStrategyChanged(GitHubUpdateCheckStrategy value)
+    {
+        _latestVersionMirror = null;
+        UpdatePreference(p => p.GitHubUpdateCheckStrategy = value);
+        ClearPendingKernelPackage();
+        _ = RefreshLatestVersionForSelectedMirrorAsync();
+    }
     partial void OnSelectedKernelCacheCleanupPolicyChanged(KernelCacheCleanupPolicy value) => UpdatePreference(p => p.KernelCacheCleanupPolicy = value);
     partial void OnLoopbackStatusChanged(string value) => OnPropertyChanged(nameof(HasLoopbackStatus));
     partial void OnElevatedTaskStatusChanged(string value) => OnPropertyChanged(nameof(HasElevatedTaskStatus));
     partial void OnSelectedKernelDownloadMirrorChanged(DownloadMirror value)
     {
+        _latestVersionMirror = null;
         ClearPendingKernelPackage();
         UpdatePreference(p => p.KernelDownloadMirror = value);
         _ = RefreshLatestVersionForSelectedMirrorAsync();
@@ -278,6 +290,7 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
         DownloadMirror.Ref1ndTest
     ]);
     public ObservableCollection<KernelCacheCleanupPolicy> KernelCacheCleanupPolicies { get; } = new(Enum.GetValues<KernelCacheCleanupPolicy>());
+    public ObservableCollection<GitHubUpdateCheckStrategy> GitHubUpdateCheckStrategies { get; } = new(Enum.GetValues<GitHubUpdateCheckStrategy>());
     public ObservableCollection<LanguageOptionViewModel> Languages { get; } = new();
     public ObservableCollection<UpdateChannelOptionViewModel> UpdateChannels { get; } = new();
     public bool IsWindows => RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
@@ -489,6 +502,7 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
         UseProxyForRemoteConfigUpdates = _currentPreferences.UseProxyForRemoteConfigUpdates;
         CustomUserAgent = _currentPreferences.CustomUserAgent;
         CustomUserAgentEnabled = !string.IsNullOrWhiteSpace(_currentPreferences.CustomUserAgent);
+        SelectedGitHubUpdateCheckStrategy = _currentPreferences.GitHubUpdateCheckStrategy;
         SelectedKernelCacheCleanupPolicy = _currentPreferences.KernelCacheCleanupPolicy;
         SelectedKernelDownloadMirror = _currentPreferences.KernelDownloadMirror;
         IsDataInExeDirectory = File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, carton.Core.Utilities.PathHelper.PortableMarkerFileName));
@@ -523,8 +537,14 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
         var kernelInfo = await _kernelManager.GetInstalledKernelInfoAsync();
         ApplyInstalledKernelInfo(kernelInfo);
 
-        var latest = await _kernelManager.GetLatestVersionAsync(SelectedKernelDownloadMirror);
-        LatestVersion = latest ?? GetString("Common.Unknown", "unknown");
+        var mirror = SelectedKernelDownloadMirror;
+        var latest = await _kernelManager.GetLatestVersionAsync(mirror);
+        if (mirror != SelectedKernelDownloadMirror)
+        {
+            return;
+        }
+
+        ApplyLatestKernelVersion(mirror, latest);
     }
 
     private async Task RefreshLatestVersionForSelectedMirrorAsync(bool showCheckingState = false)
@@ -540,14 +560,24 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
             IsCheckingKernelUpdate = true;
         }
 
+        var mirror = SelectedKernelDownloadMirror;
         try
         {
-            var latest = await _kernelManager.GetLatestVersionAsync(SelectedKernelDownloadMirror);
-            LatestVersion = latest ?? GetString("Common.Unknown", "unknown");
+            var latest = await _kernelManager.GetLatestVersionAsync(mirror);
+            if (mirror != SelectedKernelDownloadMirror)
+            {
+                return;
+            }
+
+            ApplyLatestKernelVersion(mirror, latest);
         }
         catch
         {
-            LatestVersion = GetString("Common.Unknown", "unknown");
+            if (mirror == SelectedKernelDownloadMirror)
+            {
+                _latestVersionMirror = null;
+                LatestVersion = GetString("Common.Unknown", "unknown");
+            }
         }
         finally
         {
@@ -588,7 +618,7 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
         if (package == null || !File.Exists(package.TempFilePath))
         {
             UpdateStatus = GetString("Settings.Kernel.StartingDownload", "Starting download...");
-            package = await _kernelManager.DownloadPackageAsync(null, SelectedKernelDownloadMirror);
+            package = await _kernelManager.DownloadPackageAsync(GetKnownLatestVersionForSelectedMirror(), SelectedKernelDownloadMirror);
             if (package == null)
             {
                 IsUpdatingKernel = false;
@@ -613,6 +643,28 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
             PersistPreferences();
             await RefreshKernelInfoAsync();
         }
+    }
+
+    private void ApplyLatestKernelVersion(DownloadMirror mirror, string? latest)
+    {
+        _latestVersionMirror = string.IsNullOrWhiteSpace(latest) ? null : mirror;
+        LatestVersion = latest ?? GetString("Common.Unknown", "unknown");
+    }
+
+    private string? GetKnownLatestVersionForSelectedMirror()
+    {
+        if (_latestVersionMirror != SelectedKernelDownloadMirror)
+        {
+            return null;
+        }
+
+        var version = LatestVersion.Trim();
+        var unknown = GetString("Common.Unknown", "unknown");
+        return string.IsNullOrWhiteSpace(version) ||
+               string.Equals(version, unknown, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(version, "unknown", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : version;
     }
 
     private void OnInstalledKernelChanged(object? sender, KernelInfo? kernelInfo)
@@ -1323,6 +1375,7 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
         UseProxyForRemoteConfigUpdates = _currentPreferences.UseProxyForRemoteConfigUpdates;
         CustomUserAgent = _currentPreferences.CustomUserAgent;
         CustomUserAgentEnabled = !string.IsNullOrWhiteSpace(_currentPreferences.CustomUserAgent);
+        SelectedGitHubUpdateCheckStrategy = _currentPreferences.GitHubUpdateCheckStrategy;
         SelectedKernelCacheCleanupPolicy = _currentPreferences.KernelCacheCleanupPolicy;
         SelectedKernelDownloadMirror = _currentPreferences.KernelDownloadMirror;
         _suppressPreferenceUpdates = false;

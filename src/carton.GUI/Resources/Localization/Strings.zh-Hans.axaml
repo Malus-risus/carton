@@ -205,6 +205,10 @@
 	<x:String x:Key="Settings.General.StartHiddenAtLogin">开机启动时静默启动到托盘</x:String>
 	<x:String x:Key="Settings.General.AutoStartOnLaunch">打开 Carton 时自动启动内核</x:String>
 	<x:String x:Key="Settings.General.AutoDisconnectConnectionsOnNodeSwitch">切换节点时自动断开连接 (额外请求api打断)</x:String>
+	<x:String x:Key="Settings.General.GitHubUpdateCheckStrategy">GitHub 检查更新策略</x:String>
+	<x:String x:Key="Settings.General.GitHubUpdateCheckStrategy.Description">影响 Carton 应用和内核的更新检查。</x:String>
+	<x:String x:Key="Settings.General.GitHubUpdateCheckStrategy.ApiThenAtom">优先 API，保底 releases.atom</x:String>
+	<x:String x:Key="Settings.General.GitHubUpdateCheckStrategy.ApiOnly">仅 API</x:String>
 	<x:String x:Key="Settings.General.UwpLoopback.Title">UWP 代理回环</x:String>
 	<x:String x:Key="Settings.General.UwpLoopback.Description">启动回环解锁工具，让 UWP 应用可以访问本地代理。</x:String>
 	<x:String x:Key="Settings.General.UwpLoopback.Action">打开工具</x:String>

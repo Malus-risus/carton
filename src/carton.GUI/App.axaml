@@ -16,6 +16,7 @@
     <local:LatencyForegroundConverter x:Key="LatencyForegroundConverter"/>
     <local:KernelDownloadMirrorDisplayConverter x:Key="KernelDownloadMirrorDisplayConverter"/>
     <local:KernelCacheCleanupPolicyDisplayConverter x:Key="KernelCacheCleanupPolicyDisplayConverter"/>
+    <local:GitHubUpdateCheckStrategyDisplayConverter x:Key="GitHubUpdateCheckStrategyDisplayConverter"/>
 
     <DataTemplate x:Key="PageTemplate" DataType="vm:PageViewModelBase">
       <ContentControl Content="{Binding}"/>

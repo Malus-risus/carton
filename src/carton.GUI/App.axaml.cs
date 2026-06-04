@@ -253,3 +253,27 @@ public class KernelCacheCleanupPolicyDisplayConverter : Avalonia.Data.Converters
         throw new NotImplementedException();
     }
 }
+
+public class GitHubUpdateCheckStrategyDisplayConverter : Avalonia.Data.Converters.IValueConverter
+{
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is not GitHubUpdateCheckStrategy strategy)
+        {
+            return value?.ToString() ?? string.Empty;
+        }
+
+        var localization = LocalizationService.Instance;
+        return strategy switch
+        {
+            GitHubUpdateCheckStrategy.ApiOnly => localization["Settings.General.GitHubUpdateCheckStrategy.ApiOnly"],
+            GitHubUpdateCheckStrategy.ApiThenAtom => localization["Settings.General.GitHubUpdateCheckStrategy.ApiThenAtom"],
+            _ => strategy.ToString()
+        };
+    }
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
