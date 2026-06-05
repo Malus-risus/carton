@@ -164,6 +164,11 @@ public sealed class AppUpdateService : IAppUpdateService
                 return _downloadedPortableArchiveVersion;
             }
 
+            if (!SupportsInAppUpdates)
+            {
+                return null;
+            }
+
             var release = GetPendingRestartRelease();
             if (release?.Version == null)
             {
@@ -180,7 +185,7 @@ public sealed class AppUpdateService : IAppUpdateService
         {
             return !string.IsNullOrWhiteSpace(_downloadedInstallerPath) ||
                    !string.IsNullOrWhiteSpace(_downloadedPortableArchivePath) ||
-                   GetPendingRestartRelease() != null;
+                   (SupportsInAppUpdates && GetPendingRestartRelease() != null);
         }
     }
 
@@ -502,6 +507,11 @@ public sealed class AppUpdateService : IAppUpdateService
                 }
             }
 
+            if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+            {
+                return locator.CurrentlyInstalledVersion != null;
+            }
+
             return true;
         }
         catch (Exception ex)
@@ -531,9 +541,8 @@ public sealed class AppUpdateService : IAppUpdateService
         }
 
         var appDirectory = AppDomain.CurrentDomain.BaseDirectory;
-        var markerPath = Path.Combine(appDirectory, PathHelper.PortableMarkerFileName);
         var updaterPath = Path.Combine(appDirectory, GetPortableUpdaterExecutableName());
-        return File.Exists(markerPath) && File.Exists(updaterPath);
+        return File.Exists(updaterPath);
 #endif
     }
 
