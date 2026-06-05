@@ -177,18 +177,23 @@ jobs:
           mkdir -p "$publish_dir_portable" "$publish_dir_appimage" "$publish_dir_updater"
           bash scripts/test-publish-linux-aot.sh "${{ matrix.rid }}" Release "$publish_dir_portable"
           bash scripts/test-publish-linux-aot.sh "${{ matrix.rid }}" Release "$publish_dir_appimage" INSTALLER_BUILD
-          dotnet publish src/carton.Updater/carton.Updater.csproj \
-            -c Release \
-            -r ${{ matrix.rid }} \
-            -o "$publish_dir_updater" \
-            /p:PublishAot=true \
-            /p:SelfContained=true \
-            /p:StripSymbols=true \
-            /p:DebugSymbols=false \
-            /p:DebugType=None \
-            /p:IncludeNativeLibrariesForSelfExtract=true \
-            /p:EnableCompressionInSingleFile=true \
+          updater_publish_props=(
+            -c Release
+            -r ${{ matrix.rid }}
+            -o "$publish_dir_updater"
+            /p:PublishAot=true
+            /p:SelfContained=true
+            /p:StripSymbols=true
+            /p:DebugSymbols=false
+            /p:DebugType=None
+            /p:IncludeNativeLibrariesForSelfExtract=true
+            /p:EnableCompressionInSingleFile=true
             /p:InvariantGlobalization=true
+          )
+          if [[ "${{ matrix.rid }}" == "linux-arm64" ]]; then
+            updater_publish_props+=(/p:ObjCopyName=aarch64-linux-gnu-objcopy)
+          fi
+          dotnet publish src/carton.Updater/carton.Updater.csproj "${updater_publish_props[@]}"
           cp -f "$publish_dir_updater/Carton_Updater" "$publish_dir_portable/Carton_Updater"
           chmod +x "$publish_dir_portable/Carton_Updater"
 
