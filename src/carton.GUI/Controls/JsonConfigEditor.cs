@@ -40,8 +40,7 @@ public sealed partial class JsonConfigEditor : Grid
     private readonly EditorSurface _surface;
     private readonly ScrollBar _horizontalScrollBar;
     private readonly ScrollBar _verticalScrollBar;
-    private readonly Stack<EditorSnapshot> _undoStack = new();
-    private readonly Stack<EditorSnapshot> _redoStack = new();
+    private readonly JsonEditHistory _history = new(MaxHistoryEntries, MaxHistoryChars);
     private readonly List<SearchMatch> _searchMatches = new();
 
     private string _searchQuery = string.Empty;
@@ -98,9 +97,9 @@ public sealed partial class JsonConfigEditor : Grid
         set => SetValue(IsReadOnlyProperty, value);
     }
 
-    public bool CanUndo => _undoStack.Count > 0;
+    public bool CanUndo => _history.CanUndo;
 
-    public bool CanRedo => _redoStack.Count > 0;
+    public bool CanRedo => _history.CanRedo;
 
     public bool IsSearchOpen => _isSearchOpen;
 
@@ -132,36 +131,24 @@ public sealed partial class JsonConfigEditor : Grid
 
     public void Undo()
     {
-        if (!CanUndo)
+        if (_history.TryUndo(_surface.TextValue, _surface.CaretState, out var newText, out var newState))
         {
-            return;
+            _surface.ApplyHistoryResult(newText, newState);
+            UpdateSearchResults(selectCurrentMatch: false);
+            UpdateScrollBars();
+            RaiseEditorStateChanged();
         }
-
-        var current = _surface.CaptureSnapshot();
-        var target = _undoStack.Pop();
-        _redoStack.Push(current);
-        TrimHistory(_redoStack);
-        _surface.ApplySnapshot(target);
-        UpdateSearchResults(selectCurrentMatch: false);
-        UpdateScrollBars();
-        RaiseEditorStateChanged();
     }
 
     public void Redo()
     {
-        if (!CanRedo)
+        if (_history.TryRedo(_surface.TextValue, _surface.CaretState, out var newText, out var newState))
         {
-            return;
+            _surface.ApplyHistoryResult(newText, newState);
+            UpdateSearchResults(selectCurrentMatch: false);
+            UpdateScrollBars();
+            RaiseEditorStateChanged();
         }
-
-        var current = _surface.CaptureSnapshot();
-        var target = _redoStack.Pop();
-        _undoStack.Push(current);
-        TrimHistory(_undoStack);
-        _surface.ApplySnapshot(target);
-        UpdateSearchResults(selectCurrentMatch: false);
-        UpdateScrollBars();
-        RaiseEditorStateChanged();
     }
 
     public void OpenSearch()
@@ -250,7 +237,7 @@ public sealed partial class JsonConfigEditor : Grid
 
             _surface.OnTextChanged();
 
-            // 内部编辑/撤销/重做由各自的调用方（SetTextInternal、Undo、Redo）刷新搜索与滚动条，
+            // 内部编辑/撤销/重做由各自的调用方（ApplyEdit、Undo、Redo）刷新搜索与滚动条，
             // 这里只处理外部赋值（如加载配置），避免每次按键重复全文扫描。
             if (isExternalChange)
             {
@@ -388,62 +375,20 @@ public sealed partial class JsonConfigEditor : Grid
         RaiseEditorStateChanged();
     }
 
-    private void PushUndoSnapshot(EditorSnapshot snapshot)
+    private void RecordEdit(TextEdit edit)
     {
-        _undoStack.Push(snapshot);
-        TrimHistory(_undoStack);
-        _redoStack.Clear();
+        _history.Record(edit);
         RaiseEditorStateChanged();
-    }
-
-    private static void TrimHistory(Stack<EditorSnapshot> stack)
-    {
-        if (stack.Count <= MaxHistoryEntries)
-        {
-            // 条数未超限时，仍需检查字符总量是否超出预算。
-            var totalChars = 0L;
-            foreach (var snapshot in stack)
-            {
-                totalChars += snapshot.Text.Length;
-            }
-
-            if (totalChars <= MaxHistoryChars)
-            {
-                return;
-            }
-        }
-
-        var snapshots = stack.ToArray();
-        stack.Clear();
-        var keptChars = 0L;
-        var kept = 0;
-        // snapshots[0] 是栈顶（最新），保留最新的若干条直到触及条数或字符预算。
-        for (var i = 0; i < snapshots.Length && kept < MaxHistoryEntries; i++)
-        {
-            keptChars += snapshots[i].Text.Length;
-            if (kept > 0 && keptChars > MaxHistoryChars)
-            {
-                break;
-            }
-
-            kept++;
-        }
-
-        for (var i = kept - 1; i >= 0; i--)
-        {
-            stack.Push(snapshots[i]);
-        }
     }
 
     private void ClearHistory()
     {
-        if (_undoStack.Count == 0 && _redoStack.Count == 0)
+        if (!_history.CanUndo && !_history.CanRedo)
         {
             return;
         }
 
-        _undoStack.Clear();
-        _redoStack.Clear();
+        _history.Clear();
         RaiseEditorStateChanged();
     }
 
@@ -517,13 +462,6 @@ public sealed partial class JsonConfigEditor : Grid
         return char.IsLetterOrDigit(ch) || ch == '_';
     }
 
-    private readonly record struct EditorSnapshot(
-        string Text,
-        int CaretIndex,
-        int SelectionAnchor,
-        double HorizontalOffset,
-        double VerticalOffset);
-
     private readonly record struct SearchMatch(int Start, int Length);
 
     private sealed partial class EditorSurface : Control
@@ -562,11 +500,9 @@ public sealed partial class JsonConfigEditor : Grid
         private const double MinFontSize = 10;
         private const double MaxFontSize = 24;
         private const double FontSizeStep = 1;
-        private const int BackgroundTokenizeThreshold = 50_000;
 
         private readonly JsonConfigEditor _owner;
         private readonly List<JsonLine> _lines = new();
-        private readonly List<JsonToken> _tokens = new();
         private FormattedText? _sampleFormattedText;
         private double _charWidth = 8;
         private double _lineHeight = 18;
@@ -578,10 +514,7 @@ public sealed partial class JsonConfigEditor : Grid
         private double _horizontalOffset;
         private double _verticalOffset;
         private double _fontSize = DefaultFontSize;
-        private readonly List<int> _lineFirstTokenIndex = new();
         private int _longestLineLength = 1;
-        private CancellationTokenSource? _tokenizeCts;
-        private int _tokenizeVersion;
 
         public EditorSurface(JsonConfigEditor owner)
         {
@@ -636,20 +569,23 @@ public sealed partial class JsonConfigEditor : Grid
             InvalidateVisual();
         }
 
-        public JsonConfigEditor.EditorSnapshot CaptureSnapshot()
-            => new(Text, _caretIndex, _selectionAnchor, HorizontalOffset, VerticalOffset);
+        public string TextValue => Text;
 
-        public void ApplySnapshot(JsonConfigEditor.EditorSnapshot snapshot)
+        public CaretState CaretState
+            => new(_caretIndex, _selectionAnchor, HorizontalOffset, VerticalOffset);
+
+        // 应用撤销/重做得到的新文本与恢复的光标状态。文本变更不再走历史记录。
+        public void ApplyHistoryResult(string newText, CaretState state)
         {
             _internalTextUpdate = true;
             _owner._isInternalTextMutation = true;
-            _owner.Text = snapshot.Text;
+            _owner.Text = newText;
             _owner._isInternalTextMutation = false;
             _internalTextUpdate = false;
-            _caretIndex = Math.Clamp(snapshot.CaretIndex, 0, Text.Length);
-            _selectionAnchor = Math.Clamp(snapshot.SelectionAnchor, -1, Text.Length);
-            _owner._horizontalScrollBar.Value = Math.Clamp(snapshot.HorizontalOffset, 0, _owner._horizontalScrollBar.Maximum);
-            _owner._verticalScrollBar.Value = Math.Clamp(snapshot.VerticalOffset, 0, _owner._verticalScrollBar.Maximum);
+            _caretIndex = Math.Clamp(state.Caret, 0, Text.Length);
+            _selectionAnchor = Math.Clamp(state.Anchor, -1, Text.Length);
+            _owner._horizontalScrollBar.Value = Math.Clamp(state.HOffset, 0, _owner._horizontalScrollBar.Maximum);
+            _owner._verticalScrollBar.Value = Math.Clamp(state.VOffset, 0, _owner._verticalScrollBar.Maximum);
             EnsureCaretVisible();
             InvalidateVisual();
         }
@@ -752,12 +688,12 @@ public sealed partial class JsonConfigEditor : Grid
             if (backspace && _caretIndex > 0)
             {
                 var prev = PrevCharIndex(_caretIndex);
-                SetTextInternal(Text.Remove(prev, _caretIndex - prev), prev);
+                ApplyEdit(prev, _caretIndex - prev, string.Empty);
             }
             else if (!backspace && _caretIndex < Text.Length)
             {
                 var next = NextCharIndex(_caretIndex);
-                SetTextInternal(Text.Remove(_caretIndex, next - _caretIndex), _caretIndex);
+                ApplyEdit(_caretIndex, next - _caretIndex, string.Empty);
             }
         }
 
@@ -788,22 +724,30 @@ public sealed partial class JsonConfigEditor : Grid
         private void ReplaceSelection(string replacement)
         {
             var (start, length) = GetSelectionRange();
-            var newText = Text.Remove(start, length).Insert(start, replacement);
-            SetTextInternal(newText, start + replacement.Length);
+            ApplyEdit(start, length, replacement);
         }
 
-        private void SetTextInternal(string newText, int newCaretIndex)
+        // 统一编辑入口：在 offset 处删除 removeLength 个字符并插入 insertText。
+        // 捕获 delta 记入历史栈（不再存全文快照），再以增量方式重建文本。
+        private void ApplyEdit(int offset, int removeLength, string insertText)
         {
-            if (string.Equals(newText, Text, StringComparison.Ordinal))
+            var current = Text;
+            var removed = removeLength > 0 ? current.Substring(offset, removeLength) : string.Empty;
+            if (removed.Length == 0 && insertText.Length == 0)
             {
-                _caretIndex = Math.Clamp(newCaretIndex, 0, Text.Length);
-                _selectionAnchor = _caretIndex;
-                EnsureCaretVisible();
-                InvalidateVisual();
                 return;
             }
 
-            _owner.PushUndoSnapshot(CaptureSnapshot());
+            var newText = current.Remove(offset, removeLength).Insert(offset, insertText);
+            // Restore 记录「编辑前」的光标/视口，供撤销恢复到本次编辑发生前的状态。
+            var restore = new CaretState(_caretIndex, _selectionAnchor, HorizontalOffset, VerticalOffset);
+            _owner.RecordEdit(new TextEdit(offset, removed, insertText, restore));
+            CommitText(newText, offset + insertText.Length);
+        }
+
+        // 写入新文本并把光标置于指定位置（折叠选区）。不记历史——历史由调用方决定。
+        private void CommitText(string newText, int newCaretIndex)
+        {
             _internalTextUpdate = true;
             _owner._isInternalTextMutation = true;
             _owner.Text = newText;
@@ -861,66 +805,15 @@ public sealed partial class JsonConfigEditor : Grid
         {
             EnsureMetrics();
             BuildLines();
-
-            // 取消并释放上一次的词法任务令牌(后台任务只读已取消状态的 token,释放安全),
-            // 置空以避免下次在已释放对象上调用 Cancel 抛 ObjectDisposedException。
-            _tokenizeCts?.Cancel();
-            _tokenizeCts?.Dispose();
-            _tokenizeCts = null;
-            var version = ++_tokenizeVersion;
-
-            if (Text.Length >= BackgroundTokenizeThreshold)
-            {
-                _tokens.Clear();
-                BuildLineTokenIndex();
-                StartBackgroundTokenize(Text, version);
-            }
-            else
-            {
-                BuildTokens();
-                BuildLineTokenIndex();
-            }
-
+            // 着色按可见行惰性进行（见 GetLineTokens），不再在此预扫全文 token，
+            // 故大文件编辑/加载时这里只是 O(n) 切行，无全文着色开销。
             _selectionAnchor = Math.Clamp(_selectionAnchor < 0 ? _caretIndex : _selectionAnchor, 0, Text.Length);
             _caretIndex = Math.Clamp(_caretIndex, 0, Text.Length);
-        }
-
-        private void StartBackgroundTokenize(string text, int version)
-        {
-            var cts = new CancellationTokenSource();
-            _tokenizeCts = cts;
-            var token = cts.Token;
-
-            Task.Run(() =>
-            {
-                var tokens = new List<JsonToken>(Math.Max(64, text.Length / 16));
-                JsonSyntax.Tokenize(text, tokens, token);
-                if (token.IsCancellationRequested) return;
-
-                Dispatcher.UIThread.Post(() =>
-                {
-                    if (version != _tokenizeVersion) return;
-                    _tokens.Clear();
-                    _tokens.AddRange(tokens);
-                    BuildLineTokenIndex();
-                    InvalidateVisual();
-                });
-            }, token);
         }
 
         private void BuildLines()
         {
             JsonSyntax.BuildLines(Text, _lines, out _longestLineLength);
-        }
-
-        private void BuildTokens()
-        {
-            JsonSyntax.Tokenize(Text, _tokens);
-        }
-
-        private void BuildLineTokenIndex()
-        {
-            JsonSyntax.BuildLineTokenIndex(_lines, _tokens, _lineFirstTokenIndex);
         }
     }
 }

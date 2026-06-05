@@ -18,6 +18,7 @@
   <ItemGroup>
     <Compile Include="..\carton.GUI\Services\LogParser.cs" Link="Services\LogParser.cs" />
     <Compile Include="..\carton.GUI\Controls\JsonSyntax.cs" Link="Controls\JsonSyntax.cs" />
+    <Compile Include="..\carton.GUI\Controls\JsonEditHistory.cs" Link="Controls\JsonEditHistory.cs" />
   </ItemGroup>
 
   <ItemGroup>

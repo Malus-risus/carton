@@ -340,20 +340,14 @@ public sealed partial class JsonConfigEditor
         private int DisplayColumnToOffset(JsonLine line, int targetColumn)
             => JsonSyntax.DisplayColumnToOffset(Text, line, targetColumn);
 
-        private IEnumerable<JsonToken> GetLineTokens(int lineIndex)
-        {
-            var endOffset = _lines[lineIndex].EndOffset;
-            var startIdx = _lineFirstTokenIndex[lineIndex];
-            for (var i = startIdx; i < _tokens.Count; i++)
-            {
-                var token = _tokens[i];
-                if (token.Start >= endOffset)
-                {
-                    yield break;
-                }
+        // 按需对单行着色到复用缓冲区。只对可见行调用（每帧约数十行），
+        // 故无需跨帧缓存或全文 token 表。标准 JSON token 不跨行，按行着色与全文等价。
+        private readonly List<JsonToken> _lineTokenBuffer = new();
 
-                yield return token;
-            }
+        private List<JsonToken> GetLineTokens(int lineIndex)
+        {
+            JsonSyntax.TokenizeLine(Text, _lines[lineIndex], _lineTokenBuffer);
+            return _lineTokenBuffer;
         }
 
         private double GetLineNumberColumnWidth()

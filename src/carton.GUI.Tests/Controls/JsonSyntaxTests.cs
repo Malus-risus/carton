@@ -306,4 +306,77 @@ public class JsonSyntaxTests
             }
         }
     }
+
+    // ---- 按行着色 TokenizeLine（可见行惰性着色路径）----
+
+    private static List<JsonToken> LineTokens(string text, int lineIndex)
+    {
+        var lines = Lines(text);
+        var buffer = new List<JsonToken>();
+        JsonSyntax.TokenizeLine(text, lines[lineIndex], buffer);
+        return buffer;
+    }
+
+    [Fact]
+    public void TokenizeLine_EmitsAbsoluteOffsets()
+    {
+        var text = "{\n  \"port\": 1080\n}";
+        var tokens = LineTokens(text, 1); // 第 1 行: '  "port": 1080'
+        // 属性名 token 的起点应是该行内 '"' 的绝对偏移。
+        var prop = tokens.Find(t => t.Kind == JsonTokenKind.Property);
+        Assert.Equal('"', text[prop.Start]);
+        Assert.Contains(tokens, t => t.Kind == JsonTokenKind.Number);
+    }
+
+    [Fact]
+    public void TokenizeLine_TokensStayWithinLine()
+    {
+        var text = "{\n  \"a\": 1,\n  \"b\": 2\n}";
+        var lines = Lines(text);
+        var buffer = new List<JsonToken>();
+        for (var li = 0; li < lines.Count; li++)
+        {
+            JsonSyntax.TokenizeLine(text, lines[li], buffer);
+            foreach (var t in buffer)
+            {
+                Assert.True(t.Start >= lines[li].StartOffset);
+                Assert.True(t.Start + t.Length <= lines[li].EndOffset);
+            }
+        }
+    }
+
+    [Fact]
+    public void TokenizeLine_UnterminatedString_StopsAtLineEnd()
+    {
+        // 未闭合字符串只染到本行末，不溢出到下一行。
+        var text = "\"abc\ndef";
+        var lines = Lines(text);
+        var buffer = new List<JsonToken>();
+        JsonSyntax.TokenizeLine(text, lines[0], buffer);
+        var str = buffer.Find(t => t.Kind is JsonTokenKind.String or JsonTokenKind.Property);
+        Assert.Equal(0, str.Start);
+        Assert.Equal(lines[0].EndOffset, str.Start + str.Length); // 止于行末
+    }
+
+    [Fact]
+    public void TokenizeLine_MatchesWholeDocTokenizePerLine()
+    {
+        // 标准 JSON 下，按行着色应与全文着色的结果逐 token 等价。
+        var text = "{\n  \"host\": \"x\",\n  \"n\": -3.5\n}";
+        var lines = Lines(text);
+        var whole = Tokens(text);
+        var perLine = new List<JsonToken>();
+        var buffer = new List<JsonToken>();
+        foreach (var line in lines)
+        {
+            JsonSyntax.TokenizeLine(text, line, buffer);
+            perLine.AddRange(buffer);
+        }
+
+        Assert.Equal(whole.Count, perLine.Count);
+        for (var i = 0; i < whole.Count; i++)
+        {
+            Assert.Equal(whole[i], perLine[i]);
+        }
+    }
 }

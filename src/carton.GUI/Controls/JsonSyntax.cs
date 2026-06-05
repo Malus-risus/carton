@@ -232,7 +232,81 @@ public static class JsonSyntax
     }
 
     /// <summary>
-    /// 为每一行预计算「第一个可能与该行相交的 token 下标」，供绘制时从该处线性扫描。
+    /// 只对单行 [line.StartOffset, line.EndOffset) 范围着色，发出绝对偏移的 token。
+    /// 标准 JSON 的 token 不跨行（字符串不含裸换行、无块注释），故按行着色与全文着色等价，
+    /// 且未闭合字符串只染到本行末，符合编辑直觉。供渲染时按可见行惰性调用。
+    /// </summary>
+    public static void TokenizeLine(string text, JsonLine line, List<JsonToken> tokens)
+    {
+        tokens.Clear();
+        var index = line.StartOffset;
+        var end = line.EndOffset;
+        while (index < end)
+        {
+            var ch = text[index];
+            if (ch == '"')
+            {
+                var start = index;
+                index = ReadJsonStringWithin(text, index + 1, end);
+                tokens.Add(new JsonToken(start, index - start, IsLikelyPropertyName(text, index) ? JsonTokenKind.Property : JsonTokenKind.String));
+                continue;
+            }
+
+            if (char.IsDigit(ch) || ch == '-')
+            {
+                var start = index++;
+                while (index < end && IsNumberChar(text[index]))
+                {
+                    index++;
+                }
+
+                tokens.Add(new JsonToken(start, index - start, JsonTokenKind.Number));
+                continue;
+            }
+
+            if (TryReadKeyword(text, index, out var keywordLength) && index + keywordLength <= end)
+            {
+                tokens.Add(new JsonToken(index, keywordLength, JsonTokenKind.Keyword));
+                index += keywordLength;
+                continue;
+            }
+
+            if (ch is '{' or '}' or '[' or ']' or ':' or ',')
+            {
+                tokens.Add(new JsonToken(index, 1, JsonTokenKind.Punctuation));
+            }
+
+            index++;
+        }
+    }
+
+    // 在 [index, end) 内扫描字符串闭引号，越界（未闭合）时返回 end。
+    private static int ReadJsonStringWithin(string text, int index, int end)
+    {
+        var escaped = false;
+        while (index < end)
+        {
+            var ch = text[index++];
+            if (escaped)
+            {
+                escaped = false;
+                continue;
+            }
+
+            if (ch == '\\')
+            {
+                escaped = true;
+                continue;
+            }
+
+            if (ch == '"')
+            {
+                break;
+            }
+        }
+
+        return index;
+    }
     /// </summary>
     public static void BuildLineTokenIndex(
         IReadOnlyList<JsonLine> lines,
