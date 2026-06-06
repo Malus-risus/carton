@@ -7,6 +7,7 @@ public class AppPreferences
     public bool StartHiddenAtLogin { get; set; }
     public bool AutoStartOnLaunch { get; set; }
     public bool AutoDisconnectConnectionsOnNodeSwitch { get; set; } = false;
+    public bool SaveWindowPlacement { get; set; }
     public bool UseProxyForRemoteConfigUpdates { get; set; }
     public string CustomUserAgent { get; set; } = string.Empty;
     public GitHubUpdateCheckStrategy GitHubUpdateCheckStrategy { get; set; } = GitHubUpdateCheckStrategy.ApiThenAtom;

@@ -83,6 +83,9 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
     private bool _autoDisconnectConnectionsOnNodeSwitch = true;
 
     [ObservableProperty]
+    private bool _saveWindowPlacement;
+
+    [ObservableProperty]
     private bool _isLoopbackOperationInProgress;
 
     [ObservableProperty]
@@ -156,6 +159,15 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
 
     partial void OnAutoStartOnLaunchChanged(bool value) => UpdatePreference(p => p.AutoStartOnLaunch = value);
     partial void OnAutoDisconnectConnectionsOnNodeSwitchChanged(bool value) => UpdatePreference(p => p.AutoDisconnectConnectionsOnNodeSwitch = value);
+    partial void OnSaveWindowPlacementChanged(bool value)
+    {
+        var wasSuppressed = _suppressPreferenceUpdates;
+        UpdatePreference(p => p.SaveWindowPlacement = value);
+        if (value && !wasSuppressed)
+        {
+            OnPropertyChanged(nameof(SaveWindowPlacementEnabled));
+        }
+    }
     partial void OnSelectedThemeChanged(AppTheme value) => OnThemeChanged(value);
     partial void OnUseSystemThemeAccentChanged(bool value) => OnThemeAccentModeChanged(value);
     partial void OnIsThemeAccentExpandedChanged(bool value) => OnThemeAccentExpandedChanged(value);
@@ -303,6 +315,7 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
     public string DataDirectoryPath => Path.Combine(carton.Core.Utilities.PathHelper.GetAppDataPath(), "data");
     public AppUpdateCoordinator AppUpdate => _appUpdate;
     public bool UseCustomThemeAccent => !UseSystemThemeAccent;
+    public bool SaveWindowPlacementEnabled => SaveWindowPlacement;
 
     public SettingsViewModel? ThemeAccentContent => HasLoadedThemeAccentContent ? this : null;
     public string ThemeAccentSourceDisplay => SelectedThemeAccentColorOption == null
@@ -490,6 +503,7 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
         StartHiddenAtLogin = _currentPreferences.StartHiddenAtLogin;
         AutoStartOnLaunch = _currentPreferences.AutoStartOnLaunch;
         AutoDisconnectConnectionsOnNodeSwitch = _currentPreferences.AutoDisconnectConnectionsOnNodeSwitch;
+        SaveWindowPlacement = _currentPreferences.SaveWindowPlacement;
         SelectedTheme = _currentPreferences.Theme;
         UseSystemThemeAccent = _currentPreferences.UseSystemThemeAccent;
         IsThemeAccentExpanded = false;
@@ -1401,6 +1415,7 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
         StartHiddenAtLogin = _currentPreferences.StartHiddenAtLogin;
         AutoStartOnLaunch = _currentPreferences.AutoStartOnLaunch;
         AutoDisconnectConnectionsOnNodeSwitch = _currentPreferences.AutoDisconnectConnectionsOnNodeSwitch;
+        SaveWindowPlacement = _currentPreferences.SaveWindowPlacement;
         SelectedTheme = _currentPreferences.Theme;
         UseSystemThemeAccent = _currentPreferences.UseSystemThemeAccent;
         IsThemeAccentExpanded = false;

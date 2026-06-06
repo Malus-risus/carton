@@ -7,6 +7,11 @@ public static class PathHelper
 {
     public const string PortableMarkerFileName = ".carton_portable_data";
 
+    public static string GetRoamingAppDataPath()
+        => Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "Carton");
+
     public static string GetAppDataPath()
     {
         var exeDirectory = AppDomain.CurrentDomain.BaseDirectory;
@@ -17,8 +22,6 @@ public static class PathHelper
             return exeDirectory;
         }
 
-        return Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "Carton");
+        return GetRoamingAppDataPath();
     }
 }

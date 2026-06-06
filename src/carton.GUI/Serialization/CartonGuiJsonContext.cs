@@ -9,4 +9,5 @@ namespace carton.GUI.Serialization;
     UnmappedMemberHandling = JsonUnmappedMemberHandling.Skip,
     GenerationMode = JsonSourceGenerationMode.Metadata | JsonSourceGenerationMode.Serialization)]
 [JsonSerializable(typeof(ClashConfigSnapshot))]
+[JsonSerializable(typeof(MainWindowState))]
 internal partial class CartonGuiJsonContext : JsonSerializerContext;

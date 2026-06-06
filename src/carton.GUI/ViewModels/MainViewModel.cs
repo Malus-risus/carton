@@ -630,6 +630,11 @@ public partial class MainViewModel : ViewModelBase
 
     private void OnSettingsViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(SettingsViewModel.SaveWindowPlacementEnabled))
+        {
+            OnPropertyChanged(nameof(SaveWindowPlacementEnabled));
+        }
+
         if (string.IsNullOrWhiteSpace(e.PropertyName) ||
             e.PropertyName == nameof(SettingsViewModel.IsBlockingUi) ||
             e.PropertyName == nameof(SettingsViewModel.BlockingUiMessage))
@@ -637,6 +642,8 @@ public partial class MainViewModel : ViewModelBase
             UpdateInteractionBlockState();
         }
     }
+
+    public bool SaveWindowPlacementEnabled => _settingsViewModel?.SaveWindowPlacementEnabled == true;
 
     private void UpdateInteractionBlockState()
     {

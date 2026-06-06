@@ -253,6 +253,7 @@
               Margin="0,8,20,0"
               HorizontalAlignment="Right">
       <TabStripItem Content="{DynamicResource Settings.Section.Kernel}" Tag="SectionKernel"/>
+      <TabStripItem Content="{DynamicResource Settings.Section.Interface}" Tag="SectionInterface"/>
       <TabStripItem Content="{DynamicResource Settings.Section.General}" Tag="SectionGeneral"/>
       <TabStripItem Content="{DynamicResource Settings.Section.Update}" Tag="SectionUpdate"/>
       <TabStripItem Content="{DynamicResource Settings.Section.Data}" Tag="SectionData"/>
@@ -391,8 +392,8 @@
       </StackPanel>
       </StackPanel>
 
-      <StackPanel x:Name="SectionGeneral">
-      <TextBlock Classes="settingsSectionTitle" Text="{DynamicResource Settings.Section.General}"/>
+      <StackPanel x:Name="SectionInterface">
+      <TextBlock Classes="settingsSectionTitle" Text="{DynamicResource Settings.Section.Interface}"/>
 
       <StackPanel Spacing="6">
         <Border Classes="settingsItem">
@@ -549,6 +550,22 @@
             </ComboBox>
           </Grid>
         </Border>
+        <Border Classes="settingsItem">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <StackPanel Spacing="3">
+              <TextBlock Classes="settingsTitle" Text="{DynamicResource Settings.General.SaveWindowPlacement}"/>
+              <TextBlock Classes="settingsDescription" Text="{DynamicResource Settings.General.SaveWindowPlacement.Description}"/>
+            </StackPanel>
+            <ToggleSwitch Grid.Column="1" IsChecked="{Binding SaveWindowPlacement}" VerticalAlignment="Center"/>
+          </Grid>
+        </Border>
+      </StackPanel>
+      </StackPanel>
+
+      <StackPanel x:Name="SectionGeneral">
+      <TextBlock Classes="settingsSectionTitle" Text="{DynamicResource Settings.Section.General}"/>
+
+      <StackPanel Spacing="6">
         <Border Classes="settingsItem">
           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
             <TextBlock Classes="settingsTitle" Text="{DynamicResource Settings.General.StartAtLogin}"/>
