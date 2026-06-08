@@ -9,7 +9,6 @@ using FluentAvalonia.UI.Controls;
 using System;
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
-using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -491,8 +490,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var item = _viewModel.NavigationItems
-            .FirstOrDefault(x => x.Page == _viewModel.SelectedPage);
+        var item = FindNavigationItem(_viewModel.SelectedPage);
 
         if (item == null || (!force && ReferenceEquals(RootNavigationView.SelectedItem, item)))
         {
@@ -523,10 +521,7 @@ public partial class MainWindow : Window
 
     private void SetNavigationItemSelectionStates(NavigationItem selectedItem)
     {
-        foreach (var item in GetNavigationItemContainers())
-        {
-            item.IsSelected = IsContainerForNavigationItem(item, selectedItem);
-        }
+        UpdateNavigationItemSelectionStates(RootNavigationView, selectedItem);
 
         MoveNavigationSelectionRail(selectedItem);
         Dispatcher.UIThread.Post(
@@ -560,10 +555,18 @@ public partial class MainWindow : Window
 
     private double GetFallbackNavigationRailTop(NavigationItem selectedItem)
     {
-        var index = _viewModel?.NavigationItems
-            .Select((item, itemIndex) => new { item, itemIndex })
-            .FirstOrDefault(x => ReferenceEquals(x.item, selectedItem))
-            ?.itemIndex ?? 0;
+        var index = 0;
+        if (_viewModel != null)
+        {
+            for (var i = 0; i < _viewModel.NavigationItems.Count; i++)
+            {
+                if (ReferenceEquals(_viewModel.NavigationItems[i], selectedItem))
+                {
+                    index = i;
+                    break;
+                }
+            }
+        }
 
         return 188 + index * 46;
     }
@@ -659,21 +662,59 @@ public partial class MainWindow : Window
 
     private NavigationItem? FindNavigationItem(NavigationPage page)
     {
-        return _viewModel?.NavigationItems.FirstOrDefault(x => x.Page == page);
+        if (_viewModel == null)
+        {
+            return null;
+        }
+
+        for (var i = 0; i < _viewModel.NavigationItems.Count; i++)
+        {
+            var item = _viewModel.NavigationItems[i];
+            if (item.Page == page)
+            {
+                return item;
+            }
+        }
+
+        return null;
     }
 
     private NavigationViewItem? FindNavigationItemContainer(NavigationItem item)
     {
-        return GetNavigationItemContainers()
-            .FirstOrDefault(container => IsContainerForNavigationItem(container, item));
+        return FindNavigationItemContainer(RootNavigationView, item);
     }
 
-    private NavigationViewItem[] GetNavigationItemContainers()
+    private static NavigationViewItem? FindNavigationItemContainer(Visual visual, NavigationItem item)
     {
-        return RootNavigationView.GetVisualDescendants()
-            .OfType<NavigationViewItem>()
-            .Where(item => item.DataContext is NavigationItem || item.Content is NavigationItem || item.Tag is NavigationPage)
-            .ToArray();
+        if (visual is NavigationViewItem container && IsContainerForNavigationItem(container, item))
+        {
+            return container;
+        }
+
+        foreach (var child in visual.GetVisualChildren())
+        {
+            var match = FindNavigationItemContainer(child, item);
+            if (match != null)
+            {
+                return match;
+            }
+        }
+
+        return null;
+    }
+
+    private static void UpdateNavigationItemSelectionStates(Visual visual, NavigationItem selectedItem)
+    {
+        if (visual is NavigationViewItem container &&
+            (container.DataContext is NavigationItem || container.Content is NavigationItem || container.Tag is NavigationPage))
+        {
+            container.IsSelected = IsContainerForNavigationItem(container, selectedItem);
+        }
+
+        foreach (var child in visual.GetVisualChildren())
+        {
+            UpdateNavigationItemSelectionStates(child, selectedItem);
+        }
     }
 
     private static bool IsContainerForNavigationItem(NavigationViewItem container, NavigationItem item)

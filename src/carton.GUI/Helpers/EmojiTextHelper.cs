@@ -2,12 +2,16 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Media;
+using System;
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 
 namespace carton.GUI.Helpers;
 
 public class EmojiTextHelper
 {
+    private static readonly FontFamily EmojiFont = new("avares://carton/Assets/Fonts#Twemoji COLRv0");
+
     // Match common emojis, symbols, and flag sequences.
     // - Flag sequences: pairs of regional indicators (U+1F1E6-U+1F1FF)
     // - \uD83C range: skip Enclosed Alphanumeric Supplement (U+1F100-U+1F16F = \uDD00-\uDD6F)
@@ -20,6 +24,10 @@ public class EmojiTextHelper
         @"[\uD83D-\uD83E][\uDC00-\uDFFF]|" +          // \uD83D-\uD83E full range
         @"[\u2600-\u27BF]\uFE0F?",                     // BMP symbols
         RegexOptions.Compiled);
+
+    // Remembers the last full text rendered into each TextBlock so recycled list
+    // items that are re-assigned identical content skip the inline rebuild.
+    private static readonly ConditionalWeakTable<TextBlock, string> LastRenderedText = new();
 
     public static readonly AttachedProperty<string> TextProperty =
         AvaloniaProperty.RegisterAttached<EmojiTextHelper, TextBlock, string>("Text");
@@ -44,7 +52,21 @@ public class EmojiTextHelper
         var text = GetText(textBlock);
         var prefix = GetPrefix(textBlock);
 
-        string fullText = (prefix ?? "") + (text ?? "");
+        var fullText = string.IsNullOrEmpty(prefix)
+            ? text
+            : string.Concat(prefix, text);
+
+        fullText ??= string.Empty;
+
+        // Recycled list items frequently re-assign the same text. Skip the whole
+        // rebuild (and the emoji scan) when the rendered content is unchanged.
+        if (LastRenderedText.TryGetValue(textBlock, out var previous) &&
+            string.Equals(previous, fullText, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        LastRenderedText.AddOrUpdate(textBlock, fullText);
 
         // Clear the plain Text value before rebuilding content so Text and Inlines
         // do not render together during prefix/text update races.
@@ -65,15 +87,21 @@ public class EmojiTextHelper
             return;
         }
 
+        // Fast path: if no character can even begin an emoji match, render as plain
+        // text without paying for the compiled regex or any inline allocations.
+        // This covers virtually all ASCII log/connection text.
+        if (!ContainsEmojiCandidate(fullText))
+        {
+            textBlock.Text = fullText;
+            return;
+        }
+
         var matches = EmojiRegex.Matches(fullText);
         if (matches.Count == 0)
         {
             textBlock.Text = fullText;
             return;
         }
-
-        // Use the bundled Twemoji font or system emoji font
-        var emojiFont = new FontFamily("avares://carton/Assets/Fonts#Twemoji COLRv0");
 
         int lastIndex = 0;
         foreach (Match match in matches)
@@ -87,7 +115,7 @@ public class EmojiTextHelper
             textBlock.Inlines.Add(new Run
             {
                 Text = match.Value,
-                FontFamily = emojiFont,
+                FontFamily = EmojiFont,
                 FontWeight = FontWeight.Normal,
                 FontStyle = FontStyle.Normal
             });
@@ -99,5 +127,22 @@ public class EmojiTextHelper
         {
             textBlock.Inlines.Add(new Run { Text = fullText.Substring(lastIndex) });
         }
+    }
+
+    /// <summary>
+    /// Cheap pre-filter that returns true only if <paramref name="text"/> contains a
+    /// character that could start an <see cref="EmojiRegex"/> match: a BMP symbol in
+    /// U+2600..U+27BF, or any high surrogate (the lead of a U+1Fxxx emoji/flag).
+    /// It is a strict superset of the regex, so a false result guarantees no match —
+    /// letting plain ASCII/CJK text skip the compiled regex entirely.
+    /// </summary>
+    private static bool ContainsEmojiCandidate(string text)
+    {
+        var span = text.AsSpan();
+
+        // SIMD-accelerated scan: a BMP symbol in U+2600..U+27BF, or any high
+        // surrogate (the lead of a U+1Fxxx emoji / regional-indicator flag).
+        return span.ContainsAnyInRange('☀', '➿')
+            || span.ContainsAnyInRange('\uD800', '\uDBFF');
     }
 }

@@ -63,7 +63,7 @@
 		<PackageReference Include="Velopack" Version="0.0.1589-ga2c5a97" />
 	</ItemGroup>
 
-	<ItemGroup Condition="'$(Configuration)' == 'Debug'">
+	<ItemGroup Condition="'$(Configuration)' == 'Debug' and '$(EnableAvaloniaDiagnostics)' == 'true'">
 		<PackageReference Include="Avalonia.Diagnostics" Version="11.3.14" />
 	</ItemGroup>
 

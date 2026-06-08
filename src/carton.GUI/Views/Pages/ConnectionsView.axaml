@@ -40,6 +40,19 @@
     <Style Selector="Button.connCloseButton:pressed">
       <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorTertiaryBrush}"/>
     </Style>
+
+    <Style Selector="ListBox.connectionList">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="20"/>
+    </Style>
+
+    <Style Selector="ListBox.connectionList ListBoxItem">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+    </Style>
   </UserControl.Styles>
 
   <Grid RowDefinitions="Auto,*">
@@ -72,125 +85,124 @@
     </Border>
 
     <!-- Connection List -->
-    <ScrollViewer Grid.Row="1">
-      <StackPanel Margin="20" Spacing="0">
-        <TextBlock Classes="sectionTitle"
-                   Text="{DynamicResource Navigation.Connections}"
-                   Margin="0,4,0,12"/>
+    <ListBox Grid.Row="1"
+             Classes="connectionList"
+             ItemsSource="{Binding Connections}">
+      <ListBox.ItemsPanel>
+        <ItemsPanelTemplate>
+          <VirtualizingStackPanel/>
+        </ItemsPanelTemplate>
+      </ListBox.ItemsPanel>
+      <ListBox.ItemTemplate>
+        <DataTemplate DataType="vm:ConnectionItemViewModel">
+          <Border Classes="connectionCard">
+            <Grid ColumnDefinitions="4,*" MinHeight="72">
+              <!-- Left accent bar -->
+              <Border Grid.Column="0"
+                      Background="{DynamicResource CartonAccentBrush}"
+                      CornerRadius="2,0,0,2"
+                      Opacity="0.6"/>
 
-        <ItemsControl ItemsSource="{Binding Connections}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate DataType="vm:ConnectionItemViewModel">
-              <Border Classes="connectionCard">
-                <Grid ColumnDefinitions="4,*" MinHeight="72">
-                  <!-- Left accent bar -->
-                  <Border Grid.Column="0"
-                          Background="{DynamicResource CartonAccentBrush}"
-                          CornerRadius="2,0,0,2"
-                          Opacity="0.6"/>
+              <!-- Content -->
+              <StackPanel Grid.Column="1"
+                          Margin="14,12,14,12"
+                          Spacing="6">
+                <!-- Row 1: Process + Stats + Close -->
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
+                  <TextBlock Grid.Column="0"
+                             Text="{Binding Process}"
+                             FontWeight="SemiBold"
+                             FontSize="14"
+                             TextTrimming="CharacterEllipsis"
+                             VerticalAlignment="Center"/>
 
-                  <!-- Content -->
                   <StackPanel Grid.Column="1"
-                              Margin="14,12,14,12"
-                              Spacing="6">
-                    <!-- Row 1: Process + Stats + Close -->
-                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
-                      <TextBlock Grid.Column="0"
-                                 Text="{Binding Process}"
-                                 FontWeight="SemiBold"
-                                 FontSize="14"
-                                 TextTrimming="CharacterEllipsis"
+                              Orientation="Horizontal"
+                              Spacing="10"
+                              VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="3">
+                      <TextBlock Text="&#xE898;"
+                                 FontFamily="Segoe Fluent Icons"
+                                 FontSize="11"
+                                 Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"
                                  VerticalAlignment="Center"/>
+                      <TextBlock Text="{Binding Upload}"
+                                 FontSize="12"
+                                 Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"
+                                 VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="3">
+                      <TextBlock Text="&#xE896;"
+                                 FontFamily="Segoe Fluent Icons"
+                                 FontSize="11"
+                                 Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"
+                                 VerticalAlignment="Center"/>
+                      <TextBlock Text="{Binding Download}"
+                                 FontSize="12"
+                                 Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"
+                                 VerticalAlignment="Center"/>
+                    </StackPanel>
+                  </StackPanel>
 
-                      <StackPanel Grid.Column="1"
-                                  Orientation="Horizontal"
-                                  Spacing="10"
-                                  VerticalAlignment="Center">
-                        <StackPanel Orientation="Horizontal" Spacing="3">
-                          <TextBlock Text="&#xE898;"
-                                     FontFamily="Segoe Fluent Icons"
-                                     FontSize="11"
-                                     Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"
-                                     VerticalAlignment="Center"/>
-                          <TextBlock Text="{Binding Upload}"
-                                     FontSize="12"
-                                     Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"
-                                     VerticalAlignment="Center"/>
-                        </StackPanel>
-                        <StackPanel Orientation="Horizontal" Spacing="3">
-                          <TextBlock Text="&#xE896;"
-                                     FontFamily="Segoe Fluent Icons"
-                                     FontSize="11"
-                                     Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"
-                                     VerticalAlignment="Center"/>
-                          <TextBlock Text="{Binding Download}"
-                                     FontSize="12"
-                                     Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"
-                                     VerticalAlignment="Center"/>
-                        </StackPanel>
-                      </StackPanel>
+                  <Button Grid.Column="2"
+                          Classes="connCloseButton"
+                          Command="{Binding DataContext.CloseConnectionCommand, ElementName=ConnectionsViewRoot}"
+                          CommandParameter="{Binding .}"
+                          ToolTip.Tip="{DynamicResource Connections.Button.Close}">
+                    <PathIcon Width="10" Height="10"
+                              Data="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12L19 6.41Z"/>
+                  </Button>
+                </Grid>
 
-                      <Button Grid.Column="2"
-                              Classes="connCloseButton"
-                              Command="{Binding DataContext.CloseConnectionCommand, ElementName=ConnectionsViewRoot}"
-                              CommandParameter="{Binding .}"
-                              ToolTip.Tip="{DynamicResource Connections.Button.Close}">
-                        <PathIcon Width="10" Height="10"
-                                  Data="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12L19 6.41Z"/>
-                      </Button>
-                    </Grid>
+                <!-- Row 2: Badges + Source/Dest inline -->
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                  <WrapPanel Grid.Column="0" ItemSpacing="5" VerticalAlignment="Center">
+                    <Border Background="{DynamicResource CartonControlForegroundBaseLowBrush}"
+                            CornerRadius="3"
+                            Padding="5,1">
+                      <TextBlock Text="{Binding Protocol}"
+                                 FontSize="11"
+                                 Foreground="{DynamicResource CartonControlForegroundBaseMediumHighBrush}"/>
+                    </Border>
+                    <Border Background="{DynamicResource CartonControlForegroundBaseLowBrush}"
+                            CornerRadius="3"
+                            Padding="5,1">
+                      <TextBlock Text="{Binding Outbound}"
+                                 FontSize="11"
+                                 Foreground="{DynamicResource CartonControlForegroundBaseHighBrush}"/>
+                    </Border>
+                  </WrapPanel>
 
-                    <!-- Row 2: Badges + Source/Dest inline -->
-                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-                      <WrapPanel Grid.Column="0" ItemSpacing="5" VerticalAlignment="Center">
-                        <Border Background="{DynamicResource CartonControlForegroundBaseLowBrush}"
-                                CornerRadius="3"
-                                Padding="5,1">
-                          <TextBlock Text="{Binding Protocol}"
-                                     FontSize="11"
-                                     Foreground="{DynamicResource CartonControlForegroundBaseMediumHighBrush}"/>
-                        </Border>
-                        <Border Background="{DynamicResource CartonControlForegroundBaseLowBrush}"
-                                CornerRadius="3"
-                                Padding="5,1">
-                          <TextBlock Text="{Binding Outbound}"
-                                     FontSize="11"
-                                     Foreground="{DynamicResource CartonControlForegroundBaseHighBrush}"/>
-                        </Border>
-                      </WrapPanel>
-
-                      <StackPanel Grid.Column="1"
-                                  Orientation="Horizontal"
-                                  Spacing="6"
-                                  VerticalAlignment="Center"
-                                  Margin="6,0">
-                        <TextBlock Text="{Binding Source}"
-                                   FontSize="12"
-                                   MaxLines="1"
-                                   TextTrimming="CharacterEllipsis"
-                                   Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"
-                                   ToolTip.Tip="{Binding Source}"/>
-                        <TextBlock Text="&#xE76C;"
-                                   FontFamily="Segoe Fluent Icons"
-                                   FontSize="10"
-                                   VerticalAlignment="Center"
-                                   Foreground="{DynamicResource CartonControlForegroundBaseMediumLowBrush}"/>
-                        <TextBlock Text="{Binding Destination}"
-                                   FontSize="12"
-                                   MaxLines="1"
-                                   TextTrimming="CharacterEllipsis"
-                                   Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"
-                                   ToolTip.Tip="{Binding Destination}"/>
-                      </StackPanel>
-                    </Grid>
+                  <StackPanel Grid.Column="1"
+                              Orientation="Horizontal"
+                              Spacing="6"
+                              VerticalAlignment="Center"
+                              Margin="6,0">
+                    <TextBlock Text="{Binding Source}"
+                               FontSize="12"
+                               MaxLines="1"
+                               TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"
+                               ToolTip.Tip="{Binding Source}"/>
+                    <TextBlock Text="&#xE76C;"
+                               FontFamily="Segoe Fluent Icons"
+                               FontSize="10"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource CartonControlForegroundBaseMediumLowBrush}"/>
+                    <TextBlock Text="{Binding Destination}"
+                               FontSize="12"
+                               MaxLines="1"
+                               TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"
+                               ToolTip.Tip="{Binding Destination}"/>
                   </StackPanel>
                 </Grid>
-              </Border>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-      </StackPanel>
-    </ScrollViewer>
+              </StackPanel>
+            </Grid>
+          </Border>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
   </Grid>
 
 </UserControl>

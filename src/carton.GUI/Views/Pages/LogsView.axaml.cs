@@ -12,7 +12,6 @@ using System;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Globalization;
-using System.Linq;
 
 namespace carton.Views.Pages;
 
@@ -320,9 +319,12 @@ public partial class LogsView : UserControl
         _viewModel.SelectedLogs.Clear();
         if (_logsListBox.SelectedItems != null)
         {
-            foreach (var log in _logsListBox.SelectedItems.OfType<LogEntryViewModel>())
+            foreach (var selectedItem in _logsListBox.SelectedItems)
             {
-                _viewModel.SelectedLogs.Add(log);
+                if (selectedItem is LogEntryViewModel log)
+                {
+                    _viewModel.SelectedLogs.Add(log);
+                }
             }
         }
 
@@ -338,7 +340,7 @@ public partial class LogsView : UserControl
     private void EnsureScrollViewerHooked()
     {
         _logsListBox ??= this.FindControl<ListBox>("LogsListBox");
-        var scrollViewer = _logsListBox?.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault();
+        var scrollViewer = FindScrollViewer(_logsListBox);
         if (ReferenceEquals(_scrollViewer, scrollViewer))
         {
             return;
@@ -354,6 +356,30 @@ public partial class LogsView : UserControl
         {
             _scrollViewer.PropertyChanged += OnScrollViewerPropertyChanged;
         }
+    }
+
+    private static ScrollViewer? FindScrollViewer(Visual? visual)
+    {
+        if (visual == null)
+        {
+            return null;
+        }
+
+        if (visual is ScrollViewer scrollViewer)
+        {
+            return scrollViewer;
+        }
+
+        foreach (var child in visual.GetVisualChildren())
+        {
+            var match = FindScrollViewer(child);
+            if (match != null)
+            {
+                return match;
+            }
+        }
+
+        return null;
     }
 }
 

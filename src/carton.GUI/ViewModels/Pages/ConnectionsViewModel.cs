@@ -17,6 +17,9 @@ public partial class ConnectionsViewModel : PageViewModelBase, IDisposable
 {
     private readonly ISingBoxManager? _singBoxManager;
     private readonly List<ConnectionSnapshot> _allConnections = new();
+    private readonly Dictionary<string, ConnectionItemViewModel> _connectionItemCache = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _activeConnectionIds = new(StringComparer.Ordinal);
+    private readonly List<string> _staleConnectionIds = new();
 
     public override NavigationPage PageType => NavigationPage.Connections;
 
@@ -170,7 +173,12 @@ public partial class ConnectionsViewModel : PageViewModelBase, IDisposable
                     outbound,
                     FormatBytes(conn.Upload),
                     FormatBytes(conn.Download),
-                    BuildSearchableText(process, source, destination, protocol, outbound, conn.Inbound, conn.Process, conn.Ip, conn.Source, conn.Domain, conn.Destination)));
+                    conn.Inbound,
+                    conn.Process,
+                    conn.Ip,
+                    conn.Source,
+                    conn.Domain,
+                    conn.Destination));
             }
 
             await Dispatcher.UIThread.InvokeAsync(() =>
@@ -183,6 +191,7 @@ public partial class ConnectionsViewModel : PageViewModelBase, IDisposable
                 _allConnections.Clear();
                 _allConnections.AddRange(snapshots);
                 ConnectionCount = snapshots.Count;
+                PruneConnectionItemCache();
                 RequestApplyFilters();
             }, DispatcherPriority.Background);
         }
@@ -197,14 +206,16 @@ public partial class ConnectionsViewModel : PageViewModelBase, IDisposable
 
     private static string FormatBytes(long bytes) => FormatHelper.FormatBytes(bytes);
 
-    private static string FormatText(params string?[] values)
+    private static string FormatText(string? value, string? fallback = null)
     {
-        foreach (var value in values)
+        if (!string.IsNullOrWhiteSpace(value))
         {
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                return value!;
-            }
+            return value;
+        }
+
+        if (!string.IsNullOrWhiteSpace(fallback))
+        {
+            return fallback;
         }
 
         return "-";
@@ -243,20 +254,7 @@ public partial class ConnectionsViewModel : PageViewModelBase, IDisposable
         }
 
         var searchText = SearchText.Trim();
-        var reusableConnections = new Dictionary<string, Queue<ConnectionItemViewModel>>(Connections.Count, StringComparer.Ordinal);
-        for (var i = 0; i < Connections.Count; i++)
-        {
-            var existing = Connections[i];
-            if (!reusableConnections.TryGetValue(existing.Id, out var queue))
-            {
-                queue = new Queue<ConnectionItemViewModel>();
-                reusableConnections[existing.Id] = queue;
-            }
-
-            queue.Enqueue(existing);
-        }
-
-        var filteredConnections = new List<ConnectionItemViewModel>(_allConnections.Count);
+        var writeIndex = 0;
         for (var i = 0; i < _allConnections.Count; i++)
         {
             var snapshot = _allConnections[i];
@@ -266,50 +264,77 @@ public partial class ConnectionsViewModel : PageViewModelBase, IDisposable
             }
 
             ConnectionItemViewModel connection;
-            if (reusableConnections.TryGetValue(snapshot.Id, out var queue) && queue.Count > 0)
+            if (_connectionItemCache.TryGetValue(snapshot.Id, out var cachedConnection))
             {
-                connection = queue.Dequeue();
+                connection = cachedConnection;
                 connection.Update(snapshot);
             }
             else
             {
                 connection = ConnectionItemViewModel.FromSnapshot(snapshot);
+                _connectionItemCache[snapshot.Id] = connection;
             }
 
-            filteredConnections.Add(connection);
-        }
-
-        var commonCount = Math.Min(Connections.Count, filteredConnections.Count);
-        for (var i = 0; i < commonCount; i++)
-        {
-            if (!ReferenceEquals(Connections[i], filteredConnections[i]))
+            if (writeIndex < Connections.Count)
             {
-                Connections[i] = filteredConnections[i];
+                if (!ReferenceEquals(Connections[writeIndex], connection))
+                {
+                    Connections[writeIndex] = connection;
+                }
             }
+            else
+            {
+                Connections.Add(connection);
+            }
+
+            writeIndex++;
         }
 
-        for (var i = Connections.Count - 1; i >= filteredConnections.Count; i--)
+        for (var i = Connections.Count - 1; i >= writeIndex; i--)
         {
             Connections.RemoveAt(i);
         }
 
-        for (var i = Connections.Count; i < filteredConnections.Count; i++)
-        {
-            Connections.Add(filteredConnections[i]);
-        }
-
-        VisibleConnectionCount = filteredConnections.Count;
+        VisibleConnectionCount = writeIndex;
     }
 
     private static bool MatchesSearch(ConnectionSnapshot connection, string searchText)
     {
         return string.IsNullOrWhiteSpace(searchText) ||
-               connection.SearchableText.Contains(searchText, StringComparison.OrdinalIgnoreCase);
+               connection.Process.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+               connection.Source.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+               connection.Destination.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+               connection.Protocol.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+               connection.Outbound.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+               connection.Inbound.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+               connection.RawProcess.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+               connection.Ip.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+               connection.RawSource.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+               connection.Domain.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+               connection.RawDestination.Contains(searchText, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string BuildSearchableText(params string?[] values)
+    private void PruneConnectionItemCache()
     {
-        return string.Join('\n', values);
+        _activeConnectionIds.Clear();
+        for (var i = 0; i < _allConnections.Count; i++)
+        {
+            _activeConnectionIds.Add(_allConnections[i].Id);
+        }
+
+        _staleConnectionIds.Clear();
+        foreach (var id in _connectionItemCache.Keys)
+        {
+            if (!_activeConnectionIds.Contains(id))
+            {
+                _staleConnectionIds.Add(id);
+            }
+        }
+
+        for (var i = 0; i < _staleConnectionIds.Count; i++)
+        {
+            _connectionItemCache.Remove(_staleConnectionIds[i]);
+        }
     }
 
     public void Dispose()
@@ -322,6 +347,9 @@ public partial class ConnectionsViewModel : PageViewModelBase, IDisposable
         _refreshTimer.Stop();
         _refreshTimer.Tick -= OnRefreshTimerTick;
         _allConnections.Clear();
+        _connectionItemCache.Clear();
+        _activeConnectionIds.Clear();
+        _staleConnectionIds.Clear();
         Connections.Clear();
         VisibleConnectionCount = 0;
     }
@@ -384,7 +412,12 @@ internal sealed class ConnectionSnapshot
         string outbound,
         string upload,
         string download,
-        string searchableText)
+        string inbound,
+        string rawProcess,
+        string ip,
+        string rawSource,
+        string domain,
+        string rawDestination)
     {
         Id = id;
         Process = process;
@@ -394,7 +427,12 @@ internal sealed class ConnectionSnapshot
         Outbound = outbound;
         Upload = upload;
         Download = download;
-        SearchableText = searchableText;
+        Inbound = inbound;
+        RawProcess = rawProcess;
+        Ip = ip;
+        RawSource = rawSource;
+        Domain = domain;
+        RawDestination = rawDestination;
     }
 
     public string Id { get; }
@@ -413,5 +451,15 @@ internal sealed class ConnectionSnapshot
 
     public string Download { get; }
 
-    public string SearchableText { get; }
+    public string Inbound { get; }
+
+    public string RawProcess { get; }
+
+    public string Ip { get; }
+
+    public string RawSource { get; }
+
+    public string Domain { get; }
+
+    public string RawDestination { get; }
 }

@@ -8,5 +8,6 @@
 
   <ItemGroup>
     <Compile Include="..\carton.GUI\Services\LogParser.cs" Link="Services\LogParser.cs" />
+    <Compile Include="..\carton.Core\Utilities\FormatHelper.cs" Link="Utilities\FormatHelper.cs" />
   </ItemGroup>
 </Project>

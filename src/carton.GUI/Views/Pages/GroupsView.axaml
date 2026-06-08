@@ -207,6 +207,7 @@
                          Grid.Row="1"
                          Margin="0,0,0,-4"
                          VerticalAlignment="Top"
+                         MaxHeight="420"
                          BorderThickness="0"
                          Padding="0"
                          Background="Transparent"

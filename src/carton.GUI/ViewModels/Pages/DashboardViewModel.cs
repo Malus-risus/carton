@@ -1693,8 +1693,8 @@ public partial class DashboardViewModel : PageViewModelBase
 
     private void ApplyTrafficMetrics(long uploadSpeed, long downloadSpeed, long totalUpload, long totalDownload, bool updateHistory = true)
     {
-        UploadSpeed = FormatBytes(uploadSpeed) + "/s";
-        DownloadSpeed = FormatBytes(downloadSpeed) + "/s";
+        UploadSpeed = FormatBytesPerSecond(uploadSpeed);
+        DownloadSpeed = FormatBytesPerSecond(downloadSpeed);
         TotalUpload = FormatBytes(totalUpload);
         TotalDownload = FormatBytes(totalDownload);
 
@@ -1836,6 +1836,7 @@ public partial class DashboardViewModel : PageViewModelBase
     }
 
     private static string FormatBytes(long bytes) => FormatHelper.FormatBytes(bytes);
+    private static string FormatBytesPerSecond(long bytesPerSecond) => FormatHelper.FormatBytesPerSecond(bytesPerSecond);
 
     private static string BuildWebUiUrl()
     {
