@@ -502,6 +502,11 @@ public partial class MainViewModel : ViewModelBase
         }
 
         _logsViewModel?.SetWindowVisible(isVisible);
+
+        if (!isVisible)
+        {
+            ForceUnloadInactiveTransientPagesForBackground();
+        }
     }
 
     public bool IsGroupsViewModelCreated => _lazyGroupsViewModel.IsValueCreated;
@@ -789,6 +794,32 @@ public partial class MainViewModel : ViewModelBase
     {
         var now = DateTime.UtcNow;
         TryUnloadGroupsPage(now);
+        TryUnloadTransientPage(NavigationPage.Profiles, _profilesInactiveAtUtc, _profilesViewModel, disposable => _profilesViewModel = null, now);
+        TryUnloadTransientPage(NavigationPage.Connections, _connectionsInactiveAtUtc, _connectionsViewModel, disposable => _connectionsViewModel = null, now);
+        TryUnloadTransientPage(NavigationPage.Logs, _logsInactiveAtUtc, _logsViewModel, disposable => _logsViewModel = null, now);
+        TryUnloadTransientPage(NavigationPage.Settings, _settingsInactiveAtUtc, _settingsViewModel, disposable => _settingsViewModel = null, now);
+    }
+
+    /// <summary>
+    /// When the window goes to the tray we no longer need the visual trees of the
+    /// transient pages the user is not currently viewing (Connections grid, up to
+    /// 800 log rows, profile list, the JSON editor). Backdate their inactivity so
+    /// the existing, tested unload path frees them immediately; the scheduled unload
+    /// timer then reclaims the memory. The selected page is never unloaded, so
+    /// re-showing has no extra cost and pages re-create lazily on next navigation
+    /// as they already do.
+    ///
+    /// Dashboard and Groups are intentionally excluded — their residency strategy
+    /// is left exactly as-is per user requirement.
+    /// </summary>
+    private void ForceUnloadInactiveTransientPagesForBackground()
+    {
+        var now = DateTime.UtcNow;
+        var past = now - TransientPageUnloadDelay - TimeSpan.FromSeconds(1);
+        if (_profilesInactiveAtUtc != null) _profilesInactiveAtUtc = past;
+        if (_connectionsInactiveAtUtc != null) _connectionsInactiveAtUtc = past;
+        if (_logsInactiveAtUtc != null) _logsInactiveAtUtc = past;
+        if (_settingsInactiveAtUtc != null) _settingsInactiveAtUtc = past;
         TryUnloadTransientPage(NavigationPage.Profiles, _profilesInactiveAtUtc, _profilesViewModel, disposable => _profilesViewModel = null, now);
         TryUnloadTransientPage(NavigationPage.Connections, _connectionsInactiveAtUtc, _connectionsViewModel, disposable => _connectionsViewModel = null, now);
         TryUnloadTransientPage(NavigationPage.Logs, _logsInactiveAtUtc, _logsViewModel, disposable => _logsViewModel = null, now);

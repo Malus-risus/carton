@@ -61,6 +61,8 @@ public partial class DashboardViewModel : PageViewModelBase
     private int _pendingMemoryRefresh;
     private int? _runningProfileId;
     private string? _runningSourceConfigPath;
+    private long _lastUploadSpeed;
+    private long _lastDownloadSpeed;
     private static readonly ObservableCollection<string> SupportedLogLevels = new(SingBoxLogLevelHelper.Levels);
     public override NavigationPage PageType => NavigationPage.Dashboard;
 
@@ -1698,10 +1700,19 @@ public partial class DashboardViewModel : PageViewModelBase
         TotalUpload = FormatBytes(totalUpload);
         TotalDownload = FormatBytes(totalDownload);
 
-        if (updateHistory)
+        // Skip sparkline updates when traffic is idle (sustained zero). The sparkline
+        // chart is a 60-sample rolling window; if we keep appending zeros every second
+        // we burn CPU, allocate/notify on every ObservableCollection mutation, and the
+        // UI redraws a flat line that looks identical to a static flat line. This also
+        // reduces GC pressure from the constant churn of small int[] arrays backing the
+        // samples. When traffic resumes, the sparkline starts moving again immediately.
+        if (updateHistory && !(uploadSpeed == 0 && downloadSpeed == 0 && _lastUploadSpeed == 0 && _lastDownloadSpeed == 0))
         {
             UpdateTrafficHistory(uploadSpeed, downloadSpeed);
         }
+
+        _lastUploadSpeed = uploadSpeed;
+        _lastDownloadSpeed = downloadSpeed;
     }
 
     private void UpdateTrafficHistory(long uploadSpeed, long downloadSpeed)
