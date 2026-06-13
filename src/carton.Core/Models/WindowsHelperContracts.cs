@@ -26,6 +26,14 @@ internal sealed class WindowsHelperProcessStatusResponse
     public int? Pid { get; set; }
     public int? ExitCode { get; set; }
     public string? Error { get; set; }
+    public bool StartupLogGap { get; set; }
+    public List<WindowsHelperStartupLogLine>? StartupLogs { get; set; }
+}
+
+internal sealed class WindowsHelperStartupLogLine
+{
+    public long Sequence { get; set; }
+    public string Message { get; set; } = string.Empty;
 }
 
 internal sealed class WindowsHelperLaunchRequest

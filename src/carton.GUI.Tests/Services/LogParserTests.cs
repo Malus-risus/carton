@@ -50,4 +50,15 @@ public sealed class LogParserTests
         Assert.Equal("Info", parsed.Level);
         Assert.Equal("startup complete", parsed.Message);
     }
+
+    [Fact]
+    public void ParseSingBoxLog_PrefixedSimpleMessage_PreservesPayload()
+    {
+        var input = "[INFO] outbound provider refreshed successfully";
+
+        var parsed = LogParser.ParseSingBoxLog(input, "21:30:40");
+
+        Assert.Equal("Info", parsed.Level);
+        Assert.Equal("outbound provider refreshed successfully", parsed.Message);
+    }
 }

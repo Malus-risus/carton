@@ -8,8 +8,11 @@ public partial class SingBoxManager
 
     private async Task<ElevatedStartResult> StartElevatedOnMacAsync(string configPath, string logPath)
     {
+        var outputRedirect = string.IsNullOrWhiteSpace(logPath)
+            ? "> /dev/null 2>&1"
+            : $">> {QuoteShellArg(logPath)} 2>&1";
         var shellCommand =
-            $"{QuoteShellArg(_singBoxPath)} run -c {QuoteShellArg(configPath)} < /dev/null >> {QuoteShellArg(logPath)} 2>&1 & echo $!";
+            $"{QuoteShellArg(_singBoxPath)} run -c {QuoteShellArg(configPath)} < /dev/null {outputRedirect} & echo $!";
         var appleScript =
             $"do shell script \"{EscapeForAppleScript(shellCommand)}\" with prompt \"{EscapeForAppleScript(MacTunPermissionPrompt)}\" with administrator privileges";
 

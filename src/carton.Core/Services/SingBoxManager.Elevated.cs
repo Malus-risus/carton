@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Text.Json;
 using carton.Core.Models;
 
@@ -47,10 +46,9 @@ public partial class SingBoxManager
     {
         var timing = Stopwatch.StartNew();
         LogTiming("start_elevated.begin");
+        var startupLogSession = 0;
         try
         {
-            await StopElevatedLogTailAsync();
-
 #if DEBUG
             var logFileName = $"sing-box.elevated.{DateTime.Now:yyyyMMdd-HHmmss-fff}.log";
             var elevatedLogPath = Path.Combine(_workingDirectory, "logs", logFileName);
@@ -59,6 +57,7 @@ public partial class SingBoxManager
             var elevatedLogPath = string.Empty;
 #endif
 
+            startupLogSession = BeginStartupLogCapture();
             var startProcessTiming = Stopwatch.StartNew();
             var result = await StartElevatedProcessForCurrentPlatformAsync(configPath, elevatedLogPath);
             LogTiming(
@@ -75,6 +74,7 @@ public partial class SingBoxManager
                     msg = $"{msg}: {recentLog}";
                 }
                 LogManager($"[ERROR] {msg}");
+                StopStartupLogCapture(startupLogSession);
                 SetError(msg);
                 return false;
             }
@@ -89,12 +89,6 @@ public partial class SingBoxManager
             else
             {
                 LogManager("[INFO] No PID from helper response, will discover via API port");
-            }
-
-            if (!string.IsNullOrWhiteSpace(elevatedLogPath))
-            {
-                _elevatedLogPath = elevatedLogPath;
-                StartElevatedLogTail(elevatedLogPath);
             }
 
             var readyTiming = Stopwatch.StartNew();
@@ -115,11 +109,13 @@ public partial class SingBoxManager
                     msg = $"{msg}: {recentLog}";
                 }
                 LogManager($"[ERROR] {msg}");
+                StopStartupLogCapture(startupLogSession);
                 await CleanupFailedStartAttemptAsync();
                 SetError(msg);
                 return false;
             }
 
+            _errorOutput.Clear();
             _state.StartTime = DateTime.Now;
             UpdateStatus(ServiceStatus.Running);
             LogManager($"[INFO] sing-box started successfully (elevated, pid={_elevatedPid})");
@@ -129,6 +125,11 @@ public partial class SingBoxManager
         }
         catch (Exception ex)
         {
+            if (startupLogSession != 0)
+            {
+                StopStartupLogCapture(startupLogSession);
+            }
+
             var error = $"Failed to start sing-box with administrator privileges: {ex.Message}";
             LogManager($"[ERROR] {error}");
             await CleanupFailedStartAttemptAsync();
@@ -310,10 +311,12 @@ public partial class SingBoxManager
             attempt++;
 
             var helperProcessStatus = shouldQueryHelperStatus
-                ? await TryGetWindowsHelperProcessStatusAsync()
+                ? await TryGetWindowsHelperProcessStatusAsync(includeStartupLogs: IsStartupLogCaptureActive())
                 : null;
             if (helperProcessStatus != null)
             {
+                EmitWindowsHelperStartupLogs(helperProcessStatus);
+
                 if ((!elevatedPid.HasValue || elevatedPid.Value <= 0) && helperProcessStatus.Pid is > 0)
                 {
                     elevatedPid = helperProcessStatus.Pid;
@@ -471,68 +474,6 @@ public partial class SingBoxManager
                 $"'{EscapeForPowerShellSingleQuoted(taskkillArgs)}' " +
                 "-Verb RunAs -WindowStyle Hidden -Wait -PassThru; " +
                 "if ($p) { $p.ExitCode }");
-        }
-    }
-
-    private void StartElevatedLogTail(string logPath)
-    {
-        _elevatedLogCts?.Cancel();
-        _elevatedLogCts?.Dispose();
-        _elevatedLogCts = new CancellationTokenSource();
-        _elevatedLogTask = Task.Run(() => TailLogAsync(logPath, _elevatedLogCts.Token));
-    }
-
-    private async Task StopElevatedLogTailAsync()
-    {
-        if (_elevatedLogCts == null)
-        {
-            return;
-        }
-
-        _elevatedLogCts.Cancel();
-        if (_elevatedLogTask != null)
-        {
-            try
-            {
-                await _elevatedLogTask;
-            }
-            catch (OperationCanceledException)
-            {
-            }
-        }
-
-        _elevatedLogTask = null;
-        _elevatedLogCts.Dispose();
-        _elevatedLogCts = null;
-    }
-
-    private async Task TailLogAsync(string logPath, CancellationToken cancellationToken)
-    {
-        try
-        {
-            using var stream = new FileStream(logPath, FileMode.OpenOrCreate, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                var line = await reader.ReadLineAsync(cancellationToken);
-                if (line == null)
-                {
-                    await Task.Delay(100, cancellationToken);
-                    continue;
-                }
-
-                if (!string.IsNullOrWhiteSpace(line))
-                {
-                    LogKernel(line);
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
-        }
-        catch (Exception ex)
-        {
-            LogManager($"[WARN] Elevated log tail stopped: {ex.Message}");
         }
     }
 

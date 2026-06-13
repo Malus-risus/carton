@@ -18,14 +18,17 @@ namespace carton.ViewModels;
 
 public partial class LogsViewModel : PageViewModelBase, IDisposable
 {
+    private static readonly TimeSpan LogRefreshInterval = TimeSpan.FromMilliseconds(100);
     private bool _isOnPage;
     private bool _isWindowVisible = true;
     private bool _hasPendingVisibleRefresh;
     private int _pendingFilterRefresh;
     private readonly ILocalizationService _localizationService;
     private readonly LogStore _logStore;
+    private readonly DispatcherTimer _filterRefreshTimer;
 
     public override NavigationPage PageType => NavigationPage.Logs;
+    public event EventHandler? VisibleLogsRefreshed;
 
     [ObservableProperty]
     private ObservableCollection<LogEntryViewModel> _logs = new();
@@ -57,6 +60,11 @@ public partial class LogsViewModel : PageViewModelBase, IDisposable
         InitializePageMetadata("Logs", "Navigation.Logs", "Logs");
         _logStore = logStore;
         _localizationService = LocalizationService.Instance;
+        _filterRefreshTimer = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = LogRefreshInterval
+        };
+        _filterRefreshTimer.Tick += OnFilterRefreshTimerTick;
         InitializeSourceFilters();
         _localizationService.LanguageChanged += OnLanguageChanged;
         _logStore.EntriesChanged += OnEntriesChanged;
@@ -93,6 +101,8 @@ public partial class LogsViewModel : PageViewModelBase, IDisposable
     {
         _localizationService.LanguageChanged -= OnLanguageChanged;
         _logStore.EntriesChanged -= OnEntriesChanged;
+        _filterRefreshTimer.Tick -= OnFilterRefreshTimerTick;
+        _filterRefreshTimer.Stop();
         ReleaseVisibleLogs();
     }
 
@@ -198,6 +208,7 @@ public partial class LogsViewModel : PageViewModelBase, IDisposable
 
     private void ReleaseVisibleLogs()
     {
+        StopPendingFilterRefresh();
         SelectedLogs.Clear();
         Logs.Clear();
         SelectedLog = null;
@@ -205,9 +216,9 @@ public partial class LogsViewModel : PageViewModelBase, IDisposable
 
     private void RequestApplyFilters()
     {
-        if (!Dispatcher.UIThread.CheckAccess())
+        if (!_isOnPage || !_isWindowVisible)
         {
-            Dispatcher.UIThread.Post(RequestApplyFilters);
+            _hasPendingVisibleRefresh = true;
             return;
         }
 
@@ -216,17 +227,52 @@ public partial class LogsViewModel : PageViewModelBase, IDisposable
             return;
         }
 
-        Dispatcher.UIThread.Post(() =>
+        if (!Dispatcher.UIThread.CheckAccess())
         {
+            Dispatcher.UIThread.Post(ScheduleApplyFilters, DispatcherPriority.Background);
+            return;
+        }
+
+        ScheduleApplyFilters();
+    }
+
+    private void ScheduleApplyFilters()
+    {
+        if (!Dispatcher.UIThread.CheckAccess() || !_isOnPage || !_isWindowVisible)
+        {
+            _hasPendingVisibleRefresh = true;
             Interlocked.Exchange(ref _pendingFilterRefresh, 0);
-            ApplyFilters();
-        }, DispatcherPriority.Background);
+            return;
+        }
+
+        _filterRefreshTimer.Stop();
+        _filterRefreshTimer.Start();
+    }
+
+    private void OnFilterRefreshTimerTick(object? sender, EventArgs e)
+    {
+        _filterRefreshTimer.Stop();
+        Interlocked.Exchange(ref _pendingFilterRefresh, 0);
+        if (!_isOnPage || !_isWindowVisible)
+        {
+            _hasPendingVisibleRefresh = true;
+            return;
+        }
+
+        ApplyFilters();
+    }
+
+    private void StopPendingFilterRefresh()
+    {
+        _filterRefreshTimer.Stop();
+        Interlocked.Exchange(ref _pendingFilterRefresh, 0);
     }
 
     private void ApplyFilters()
     {
-        if (!Dispatcher.UIThread.CheckAccess())
+        if (!Dispatcher.UIThread.CheckAccess() || !_isOnPage || !_isWindowVisible)
         {
+            _hasPendingVisibleRefresh = true;
             return;
         }
 
@@ -303,6 +349,8 @@ public partial class LogsViewModel : PageViewModelBase, IDisposable
         {
             SelectedLog = matchedSelectedLog;
         }
+
+        VisibleLogsRefreshed?.Invoke(this, EventArgs.Empty);
     }
 
     private static void UpdateLog(LogEntryViewModel log, LogEntryRecord entry, string sourceDisplayName)

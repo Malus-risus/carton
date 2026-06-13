@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using Avalonia.Threading;
+using carton.Core.Models;
 using carton.GUI.Models;
 
 namespace carton.GUI.Services;
@@ -26,7 +27,17 @@ public sealed class LogStore
     public void AddLog(string message, LogSource source)
     {
         var entry = CreateEntry(message, source);
+        AddEntry(entry);
+    }
 
+    public void AddSingBoxLog(KernelLogEntry log)
+    {
+        var entry = CreateSingBoxEntry(log);
+        AddEntry(entry);
+    }
+
+    private void AddEntry(LogEntryRecord entry)
+    {
         lock (_syncRoot)
         {
             _entries.Add(entry);
@@ -78,6 +89,26 @@ public sealed class LogStore
         }
 
         return new LogEntryRecord(time, source, level, parsedMessage);
+    }
+
+    private static LogEntryRecord CreateSingBoxEntry(KernelLogEntry log)
+    {
+        if (string.IsNullOrWhiteSpace(log.Level))
+        {
+            return CreateEntry(log.Message, LogSource.SingBox);
+        }
+
+        var message = log.Message;
+        if (message.Length > MaxMessageLength)
+        {
+            message = message[..MaxMessageLength] + "...";
+        }
+
+        return new LogEntryRecord(
+            DateTime.Now.ToString("HH:mm:ss"),
+            LogSource.SingBox,
+            log.Level,
+            message);
     }
 
     private void RaiseEntriesChanged()

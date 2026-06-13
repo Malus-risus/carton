@@ -11,6 +11,8 @@ namespace carton.Core.Services;
 public static class WindowsElevatedHelperHost
 {
     private const string TokenHeader = "X-Carton-Helper-Token";
+    private const int MaxStartupLogLines = 128;
+    private const int MaxStartupLogLineLength = 2048;
 
     public static bool TryRunFromArgs(string[] args)
     {
@@ -137,12 +139,16 @@ public static class WindowsElevatedHelperHost
         Task? stderrTask = null;
         CancellationTokenSource? startupWatchCts = null;
         Task? startupWatchTask = null;
+        CancellationTokenSource? startupLogCaptureCts = null;
         int? lastKnownPid = null;
         int? lastKnownExitCode = null;
         string? lastKnownError = null;
         string? lastApiAddress = null;
         string? lastApiSecret = null;
         var processLock = new object();
+        var startupLogLock = new object();
+        var startupLogLines = new Queue<WindowsHelperStartupLogLine>();
+        long nextStartupLogSequence = 1;
         var shouldStop = false;
 
         static void WriteResponseFile(string path, WindowsHelperActionResponse response)
@@ -185,6 +191,136 @@ public static class WindowsElevatedHelperHost
             }
         }
 
+        void ResetStartupLogs()
+        {
+            lock (startupLogLock)
+            {
+                startupLogLines.Clear();
+                nextStartupLogSequence = 1;
+            }
+        }
+
+        CancellationToken StartStartupLogCollection()
+        {
+            try
+            {
+                startupLogCaptureCts?.Cancel();
+            }
+            catch
+            {
+            }
+
+            startupLogCaptureCts = new CancellationTokenSource();
+            return startupLogCaptureCts.Token;
+        }
+
+        void StopStartupLogCollection()
+        {
+            try
+            {
+                startupLogCaptureCts?.Cancel();
+            }
+            catch
+            {
+            }
+        }
+
+        void RememberStartupLogLine(string line, CancellationToken cancellationToken)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+
+            var normalized = StripTerminalDecorations(line).Trim();
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return;
+            }
+
+            if (normalized.Length > MaxStartupLogLineLength)
+            {
+                normalized = normalized[..MaxStartupLogLineLength] + "...";
+            }
+
+            lock (startupLogLock)
+            {
+                startupLogLines.Enqueue(new WindowsHelperStartupLogLine
+                {
+                    Sequence = nextStartupLogSequence++,
+                    Message = normalized
+                });
+
+                while (startupLogLines.Count > MaxStartupLogLines)
+                {
+                    startupLogLines.Dequeue();
+                }
+            }
+        }
+
+        string? GetRecentStartupLogSnapshot(int maxLines)
+        {
+            lock (startupLogLock)
+            {
+                if (startupLogLines.Count == 0)
+                {
+                    return null;
+                }
+
+                var skip = Math.Max(0, startupLogLines.Count - Math.Max(1, maxLines));
+                var index = 0;
+                StringBuilder? builder = null;
+                foreach (var entry in startupLogLines)
+                {
+                    if (index++ < skip)
+                    {
+                        continue;
+                    }
+
+                    if (builder == null)
+                    {
+                        builder = new StringBuilder(entry.Message.Length);
+                    }
+                    else
+                    {
+                        builder.Append(" | ");
+                    }
+
+                    builder.Append(entry.Message);
+                }
+
+                return builder?.ToString();
+            }
+        }
+
+        List<WindowsHelperStartupLogLine>? GetStartupLogsAfter(long after, out bool gap)
+        {
+            lock (startupLogLock)
+            {
+                if (startupLogLines.Count == 0)
+                {
+                    gap = false;
+                    return null;
+                }
+
+                var oldest = startupLogLines.Peek().Sequence;
+                gap = oldest > 1 && after < oldest - 1;
+                List<WindowsHelperStartupLogLine>? result = null;
+                foreach (var entry in startupLogLines)
+                {
+                    if (entry.Sequence <= after)
+                    {
+                        continue;
+                    }
+
+                    result ??= new List<WindowsHelperStartupLogLine>();
+                    result.Add(entry);
+                }
+
+                return result;
+            }
+        }
+
         var parentWatchdogTask = parentPid > 0
             ? Task.Run(async () =>
             {
@@ -215,7 +351,7 @@ public static class WindowsElevatedHelperHost
             })
             : null;
 
-        async Task<WindowsHelperProcessStatusResponse> GetProcessStatusAsync()
+        async Task<WindowsHelperProcessStatusResponse> GetProcessStatusAsync(long? afterStartupLogSequence)
         {
             int? pid;
             int? exitCode;
@@ -262,6 +398,15 @@ public static class WindowsElevatedHelperHost
 
         BuildResponse:
             var apiReady = isRunning && await IsApiReadyAsync(apiAddress, apiSecret);
+            if (apiReady)
+            {
+                StopStartupLogCollection();
+            }
+
+            var startupLogGap = false;
+            var startupLogs = afterStartupLogSequence.HasValue
+                ? GetStartupLogsAfter(afterStartupLogSequence.Value, out startupLogGap)
+                : null;
             return new WindowsHelperProcessStatusResponse
             {
                 HasProcess = hasProcess,
@@ -269,7 +414,9 @@ public static class WindowsElevatedHelperHost
                 ApiReady = apiReady,
                 Pid = pid,
                 ExitCode = exitCode,
-                Error = error
+                Error = error,
+                StartupLogGap = startupLogGap,
+                StartupLogs = startupLogs
             };
         }
 
@@ -279,6 +426,7 @@ public static class WindowsElevatedHelperHost
             {
                 try
                 {
+                    StopStartupLogCollection();
                     startupWatchCts?.Cancel();
                     startupWatchCts = null;
                     if (singBoxProcess != null)
@@ -352,39 +500,7 @@ public static class WindowsElevatedHelperHost
 
         WindowsHelperActionResponse StartSingBox(WindowsHelperStartRequest request)
         {
-            var recentLogLock = new object();
-            var recentLogLines = new Queue<string>();
-
-            void RememberLogLine(string line)
-            {
-                var normalized = StripTerminalDecorations(line);
-                if (string.IsNullOrWhiteSpace(normalized))
-                {
-                    return;
-                }
-
-                lock (recentLogLock)
-                {
-                    recentLogLines.Enqueue(normalized.Trim());
-                    while (recentLogLines.Count > 20)
-                    {
-                        recentLogLines.Dequeue();
-                    }
-                }
-            }
-
-            string? GetRecentLogSnapshot()
-            {
-                lock (recentLogLock)
-                {
-                    if (recentLogLines.Count == 0)
-                    {
-                        return null;
-                    }
-
-                    return string.Join(" | ", recentLogLines);
-                }
-            }
+            ResetStartupLogs();
 
             void WriteStartResult(WindowsHelperActionResponse response)
             {
@@ -433,6 +549,7 @@ public static class WindowsElevatedHelperHost
 
                 try
                 {
+                    var startupLogToken = StartStartupLogCollection();
                     lastApiAddress = request.ApiAddress;
                     lastApiSecret = request.ApiSecret;
                     if (!string.IsNullOrWhiteSpace(request.LogPath))
@@ -468,8 +585,14 @@ public static class WindowsElevatedHelperHost
                     lastKnownPid = process.Id;
                     lastKnownExitCode = null;
                     lastKnownError = null;
-                    stdoutTask = PumpStreamAsync(process.StandardOutput, logWriter, RememberLogLine);
-                    stderrTask = PumpStreamAsync(process.StandardError, logWriter, RememberLogLine);
+                    stdoutTask = PumpStreamAsync(
+                        process.StandardOutput,
+                        logWriter,
+                        line => RememberStartupLogLine(line, startupLogToken));
+                    stderrTask = PumpStreamAsync(
+                        process.StandardError,
+                        logWriter,
+                        line => RememberStartupLogLine(line, startupLogToken));
 
                     if (process.WaitForExit(300))
                     {
@@ -482,7 +605,7 @@ public static class WindowsElevatedHelperHost
                         {
                         }
 
-                        var recentLog = GetRecentLogSnapshot() ?? TryReadRecentLog(request.LogPath, 10);
+                        var recentLog = GetRecentStartupLogSnapshot(10) ?? TryReadRecentLog(request.LogPath, 10);
                         var response = new WindowsHelperActionResponse
                         {
                             Success = false,
@@ -497,7 +620,7 @@ public static class WindowsElevatedHelperHost
 
                     if (process.HasExited)
                     {
-                        var recentLog = GetRecentLogSnapshot() ?? TryReadRecentLog(request.LogPath, 10);
+                        var recentLog = GetRecentStartupLogSnapshot(10) ?? TryReadRecentLog(request.LogPath, 10);
                         var response = new WindowsHelperActionResponse
                         {
                             Success = false,
@@ -513,7 +636,7 @@ public static class WindowsElevatedHelperHost
                     startupWatchCts = new CancellationTokenSource();
                     startupWatchTask = WatchStartupExitAsync(
                         process,
-                        () => GetRecentLogSnapshot() ?? TryReadRecentLog(request.LogPath, 12),
+                        () => GetRecentStartupLogSnapshot(12) ?? TryReadRecentLog(request.LogPath, 12),
                         (exitCode, recentLog) =>
                         {
                             lock (processLock)
@@ -571,8 +694,18 @@ public static class WindowsElevatedHelperHost
                         await WriteTextAsync(context.Response, HttpStatusCode.OK, token);
                         break;
                     case "status":
-                        await WriteProcessStatusAsync(context.Response, HttpStatusCode.OK, await GetProcessStatusAsync());
+                    {
+                        var afterStartupLogSequence = long.TryParse(
+                            context.Request.QueryString["afterStartupLogSequence"],
+                            out var parsedAfterStartupLogSequence)
+                            ? parsedAfterStartupLogSequence
+                            : (long?)null;
+                        await WriteProcessStatusAsync(
+                            context.Response,
+                            HttpStatusCode.OK,
+                            await GetProcessStatusAsync(afterStartupLogSequence));
                         break;
+                    }
                     case "start":
                     {
                         if (!string.Equals(context.Request.HttpMethod, "POST", StringComparison.OrdinalIgnoreCase))
@@ -674,6 +807,15 @@ public static class WindowsElevatedHelperHost
             {
                 await startupWatchTask;
             }
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            startupLogCaptureCts?.Cancel();
+            startupLogCaptureCts?.Dispose();
         }
         catch
         {

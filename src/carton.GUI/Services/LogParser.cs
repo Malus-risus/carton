@@ -43,6 +43,11 @@ internal static class LogParser
             return compact;
         }
 
+        if (prefixedLevel != null)
+        {
+            return (currentTime, prefixedLevel, span.ToString());
+        }
+
         var tokenIndex = 0;
         var position = 0;
         var timeTokenStart = -1;

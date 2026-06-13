@@ -18,6 +18,7 @@ namespace carton.Views.Pages;
 public partial class LogsView : UserControl
 {
     private const double BottomThreshold = 4;
+    private const int MaxScrollToBottomAttempts = 8;
     private static readonly TimeSpan LogRefreshInterval = TimeSpan.FromMilliseconds(500);
 
     private ListBox? _logsListBox;
@@ -25,7 +26,10 @@ public partial class LogsView : UserControl
     private LogsViewModel? _viewModel;
     private bool _autoScrollToBottom = true;
     private bool _pendingScrollToBottom;
+    private int _pendingScrollToBottomAttempts;
     private bool _suppressScrollTracking;
+    private bool _isScrollingLastLogIntoView;
+    private bool _scrollLastLogIntoViewQueued;
     private readonly DispatcherTimer _logRefreshTimer;
     private bool _hasPendingLogRefresh;
     private bool _isViewActive;
@@ -72,6 +76,7 @@ public partial class LogsView : UserControl
 
         _scrollViewer = null;
         _pendingScrollToBottom = false;
+        _scrollLastLogIntoViewQueued = false;
         _hasPendingLogRefresh = false;
         _logRefreshTimer.Stop();
     }
@@ -116,6 +121,7 @@ public partial class LogsView : UserControl
         DetachViewModel();
         _hasPendingLogRefresh = false;
         _pendingScrollToBottom = false;
+        _scrollLastLogIntoViewQueued = false;
         _logRefreshTimer.Stop();
     }
 
@@ -132,8 +138,13 @@ public partial class LogsView : UserControl
         {
             _viewModel.Logs.CollectionChanged += OnLogsCollectionChanged;
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+            _viewModel.VisibleLogsRefreshed += OnVisibleLogsRefreshed;
             _autoScrollToBottom = _viewModel.IsAutoScrollToLatest;
             SyncSelectionToViewModel();
+            if (_autoScrollToBottom && _viewModel.Logs.Count > 0)
+            {
+                RequestScrollToBottom();
+            }
         }
     }
 
@@ -143,7 +154,16 @@ public partial class LogsView : UserControl
         {
             _viewModel.Logs.CollectionChanged -= OnLogsCollectionChanged;
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            _viewModel.VisibleLogsRefreshed -= OnVisibleLogsRefreshed;
             _viewModel = null;
+        }
+    }
+
+    private void OnVisibleLogsRefreshed(object? sender, EventArgs e)
+    {
+        if (_isViewActive && _autoScrollToBottom)
+        {
+            RequestScrollToBottom();
         }
     }
 
@@ -152,6 +172,7 @@ public partial class LogsView : UserControl
         if (_autoScrollToBottom)
         {
             _hasPendingLogRefresh = true;
+            RequestScrollToBottom();
             if (_isViewActive && !_logRefreshTimer.IsEnabled)
             {
                 _logRefreshTimer.Start();
@@ -212,26 +233,46 @@ public partial class LogsView : UserControl
         if (!_autoScrollToBottom)
         {
             _pendingScrollToBottom = false;
+            _pendingScrollToBottomAttempts = 0;
             return;
         }
 
         var maxOffsetY = Math.Max(0, _scrollViewer.Extent.Height - _scrollViewer.Viewport.Height);
         if (Math.Abs(maxOffsetY - _scrollViewer.Offset.Y) <= BottomThreshold)
         {
-            _pendingScrollToBottom = false;
-            return;
+            if (_pendingScrollToBottomAttempts > 0 || GetLogCount() == 0)
+            {
+                _pendingScrollToBottom = false;
+                _pendingScrollToBottomAttempts = 0;
+                return;
+            }
         }
 
         _suppressScrollTracking = true;
-        _scrollViewer.Offset = new Vector(_scrollViewer.Offset.X, maxOffsetY);
-        _suppressScrollTracking = false;
-        _pendingScrollToBottom = false;
+        try
+        {
+            _scrollViewer.Offset = new Vector(_scrollViewer.Offset.X, maxOffsetY);
+        }
+        finally
+        {
+            _suppressScrollTracking = false;
+        }
+
+        if (++_pendingScrollToBottomAttempts >= MaxScrollToBottomAttempts)
+        {
+            _pendingScrollToBottom = false;
+            _pendingScrollToBottomAttempts = 0;
+            return;
+        }
+
+        Dispatcher.UIThread.Post(() => { }, DispatcherPriority.Background);
     }
 
     private void OnScrollViewerPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
     {
         if (e.Property != ScrollViewer.OffsetProperty ||
             _suppressScrollTracking ||
+            _pendingScrollToBottom ||
             sender is not ScrollViewer scrollViewer)
         {
             return;
@@ -274,13 +315,61 @@ public partial class LogsView : UserControl
 
     private void RequestScrollToBottom()
     {
-        if (_pendingScrollToBottom)
+        if (!_pendingScrollToBottom)
+        {
+            _pendingScrollToBottom = true;
+            _pendingScrollToBottomAttempts = 0;
+        }
+
+        QueueScrollLastLogIntoView();
+    }
+
+    private void QueueScrollLastLogIntoView()
+    {
+        if (_scrollLastLogIntoViewQueued)
         {
             return;
         }
 
-        _pendingScrollToBottom = true;
-        Dispatcher.UIThread.Post(() => { }, DispatcherPriority.Background);
+        _scrollLastLogIntoViewQueued = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _scrollLastLogIntoViewQueued = false;
+            TryScrollLastLogIntoView();
+        }, DispatcherPriority.Background);
+    }
+
+    private void TryScrollLastLogIntoView()
+    {
+        if (!_autoScrollToBottom || _isScrollingLastLogIntoView)
+        {
+            return;
+        }
+
+        _logsListBox ??= this.FindControl<ListBox>("LogsListBox");
+        if (_logsListBox == null ||
+            _viewModel == null ||
+            _viewModel.Logs.Count == 0)
+        {
+            return;
+        }
+
+        _isScrollingLastLogIntoView = true;
+        _suppressScrollTracking = true;
+        try
+        {
+            _logsListBox.ScrollIntoView(_viewModel.Logs[^1]);
+        }
+        finally
+        {
+            _suppressScrollTracking = false;
+            _isScrollingLastLogIntoView = false;
+        }
+    }
+
+    private int GetLogCount()
+    {
+        return _viewModel?.Logs.Count ?? 0;
     }
 
     private static bool IsDescendantOf(Visual sourceVisual, Visual ancestor)

@@ -687,7 +687,8 @@ public partial class SingBoxManager
         }
     }
 
-    private async Task<WindowsHelperProcessStatusResponse?> TryGetWindowsHelperProcessStatusAsync()
+    private async Task<WindowsHelperProcessStatusResponse?> TryGetWindowsHelperProcessStatusAsync(
+        bool includeStartupLogs = false)
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ||
             string.IsNullOrWhiteSpace(_windowsElevatedHelperToken))
@@ -699,7 +700,10 @@ public partial class SingBoxManager
         {
             using var cts = new CancellationTokenSource(LocalApiProbeTimeout);
             using var client = HttpClientFactory.CreateLoopbackClient(LocalApiProbeTimeout);
-            using var message = new HttpRequestMessage(HttpMethod.Get, GetWindowsHelperUri("status"));
+            var statusPath = includeStartupLogs
+                ? $"status?afterStartupLogSequence={Interlocked.Read(ref _windowsStartupLogSequence)}"
+                : "status";
+            using var message = new HttpRequestMessage(HttpMethod.Get, GetWindowsHelperUri(statusPath));
             message.Headers.Add(WindowsElevatedHelperTokenHeader, _windowsElevatedHelperToken);
             using var response = await client.SendAsync(message, cts.Token);
             if (!response.IsSuccessStatusCode)
@@ -716,6 +720,38 @@ public partial class SingBoxManager
         catch
         {
             return null;
+        }
+    }
+
+    private void EmitWindowsHelperStartupLogs(WindowsHelperProcessStatusResponse status)
+    {
+        if (!IsStartupLogCaptureActive())
+        {
+            return;
+        }
+
+        if (status.StartupLogGap && !Volatile.Read(ref _reportedWindowsStartupLogGap))
+        {
+            Volatile.Write(ref _reportedWindowsStartupLogGap, true);
+            LogManager("[WARN] Some early sing-box startup logs were dropped because the startup log buffer overflowed");
+        }
+
+        var lines = status.StartupLogs;
+        if (lines == null || lines.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var line in lines)
+        {
+            if (line.Sequence <= Interlocked.Read(ref _windowsStartupLogSequence) ||
+                string.IsNullOrEmpty(line.Message))
+            {
+                continue;
+            }
+
+            LogStartupKernel(line.Message);
+            Interlocked.Exchange(ref _windowsStartupLogSequence, line.Sequence);
         }
     }
 

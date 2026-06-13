@@ -13,6 +13,10 @@ public partial class SingBoxManager
     private const int MessageBufferTrimThreshold = 64 * 1024;
     private const int MessageBufferInitialCapacity = 4 * 1024;
     private const int MaxMonitorMessageBytes = 64 * 1024;
+    private static readonly JsonReaderOptions MonitorJsonReaderOptions = new()
+    {
+        MaxDepth = 64
+    };
 
     public long? GetRunningProcessMemoryBytes()
     {
@@ -40,6 +44,14 @@ public partial class SingBoxManager
 
     private void EnsureRuntimeMonitorsRunning()
     {
+        if (_logMonitorTask is { IsCompleted: false })
+        {
+        }
+        else
+        {
+            _logMonitorTask = Task.Run(StartLogMonitorAsync);
+        }
+
         if (_trafficMonitorTask is { IsCompleted: false })
         {
         }
@@ -54,6 +66,131 @@ public partial class SingBoxManager
         }
 
         _memoryMonitorTask = Task.Run(StartMemoryMonitorAsync);
+    }
+
+    private async Task StartLogMonitorAsync()
+    {
+        var buffer = ArrayPool<byte>.Shared.Rent(4096);
+        var stream = new MemoryStream(MessageBufferInitialCapacity);
+        ClientWebSocket? webSocket = null;
+        var skippingOversizedMessage = false;
+        var consecutiveFailures = 0;
+        var wsUri = BuildWebSocketUri("logs?level=trace");
+
+        try
+        {
+            while (_state.Status == ServiceStatus.Running)
+            {
+                try
+                {
+                    if (webSocket == null || webSocket.State != WebSocketState.Open)
+                    {
+                        webSocket?.Dispose();
+                        webSocket = new ClientWebSocket();
+                        webSocket.Options.KeepAliveInterval = TimeSpan.FromSeconds(15);
+                        var wsSecret = HttpClientFactory.LocalApiSecret;
+                        if (!string.IsNullOrWhiteSpace(wsSecret))
+                        {
+                            webSocket.Options.SetRequestHeader("Authorization", $"Bearer {wsSecret}");
+                        }
+
+                        using var connectCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                        await webSocket.ConnectAsync(wsUri, connectCts.Token);
+                        StopStartupLogCapture();
+                        consecutiveFailures = 0;
+                        ResetMessageBuffer(stream);
+                    }
+
+                    var result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+                    if (result.MessageType == WebSocketMessageType.Close)
+                    {
+                        await CloseSocketSilentlyAsync(webSocket, "Carton log monitor reconnect");
+                        webSocket.Dispose();
+                        webSocket = null;
+                        await Task.Delay(500);
+                        continue;
+                    }
+
+                    if (result.Count > 0)
+                    {
+                        if (skippingOversizedMessage)
+                        {
+                            if (result.EndOfMessage)
+                            {
+                                skippingOversizedMessage = false;
+                                ResetMessageBuffer(stream);
+                            }
+
+                            continue;
+                        }
+
+                        if (stream.Length + result.Count > MaxMonitorMessageBytes)
+                        {
+                            LogManager($"[WARN] Log monitor payload exceeded {MaxMonitorMessageBytes} bytes and was discarded");
+                            skippingOversizedMessage = !result.EndOfMessage;
+                            ResetMessageBuffer(stream);
+                            continue;
+                        }
+
+                        stream.Write(buffer, 0, result.Count);
+                    }
+
+                    if (!result.EndOfMessage)
+                    {
+                        continue;
+                    }
+
+                    if (result.MessageType != WebSocketMessageType.Text)
+                    {
+                        ResetMessageBuffer(stream);
+                        continue;
+                    }
+
+                    if (stream.Length == 0)
+                    {
+                        continue;
+                    }
+
+                    var payload = stream.GetBuffer().AsMemory(0, (int)stream.Length);
+                    var logEntry = TryParseClashLogMessage(payload);
+                    ResetMessageBuffer(stream);
+                    if (logEntry is { Message.Length: > 0 } entry)
+                    {
+                        LogKernel(entry);
+                    }
+                }
+                catch (Exception e)
+                {
+                    consecutiveFailures++;
+                    if (consecutiveFailures == 1 || consecutiveFailures % 10 == 0)
+                    {
+                        LogManager($"[WARN] Log monitor error: {e.Message}");
+                    }
+
+                    if (webSocket != null)
+                    {
+                        await CloseSocketSilentlyAsync(webSocket, "Carton log monitor error");
+                        webSocket.Dispose();
+                        webSocket = null;
+                    }
+
+                    ResetMessageBuffer(stream);
+                    await Task.Delay(TimeSpan.FromSeconds(Math.Min(5, Math.Max(1, consecutiveFailures))));
+                }
+            }
+        }
+        finally
+        {
+            if (webSocket != null)
+            {
+                await CloseSocketSilentlyAsync(webSocket, "Carton log monitor stopped");
+                webSocket.Dispose();
+            }
+
+            stream.Dispose();
+            ArrayPool<byte>.Shared.Return(buffer);
+            _logMonitorTask = null;
+        }
     }
 
     private async Task StartTrafficMonitorAsync()
@@ -307,7 +444,7 @@ public partial class SingBoxManager
 
         try
         {
-            var reader = new Utf8JsonReader(payload.Span);
+            var reader = new Utf8JsonReader(payload.Span, MonitorJsonReaderOptions);
             long? rootUplink = null;
             long? rootDownlink = null;
             long? nowUplink = null;
@@ -340,7 +477,7 @@ public partial class SingBoxManager
 
         try
         {
-            var reader = new Utf8JsonReader(payload.Span);
+            var reader = new Utf8JsonReader(payload.Span, MonitorJsonReaderOptions);
             long? rootMemory = null;
             long? nowMemory = null;
 
@@ -354,6 +491,95 @@ public partial class SingBoxManager
         catch (JsonException ex)
         {
             LogManager($"[WARN] Failed to parse memory snapshot: {ex.Message}");
+            return null;
+        }
+    }
+
+    private KernelLogEntry? TryParseClashLogMessage(ReadOnlyMemory<byte> payload)
+    {
+        if (IsEmptyOrJsonWhitespace(payload.Span))
+        {
+            return null;
+        }
+
+        try
+        {
+            var reader = new Utf8JsonReader(payload.Span, MonitorJsonReaderOptions);
+            if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
+            {
+                return null;
+            }
+
+            var level = "Info";
+            string? message = null;
+
+            while (reader.Read())
+            {
+                if (reader.TokenType == JsonTokenType.EndObject)
+                {
+                    break;
+                }
+
+                if (reader.TokenType != JsonTokenType.PropertyName)
+                {
+                    continue;
+                }
+
+                if (reader.ValueTextEquals("type"u8))
+                {
+                    if (!reader.Read())
+                    {
+                        return null;
+                    }
+
+                    level = ReadClashLogLevel(ref reader);
+                    if (reader.TokenType is JsonTokenType.StartObject or JsonTokenType.StartArray)
+                    {
+                        reader.Skip();
+                    }
+                    continue;
+                }
+
+                if (reader.ValueTextEquals("payload"u8))
+                {
+                    if (!reader.Read())
+                    {
+                        return null;
+                    }
+
+                    if (reader.TokenType == JsonTokenType.String)
+                    {
+                        message = reader.GetString();
+                    }
+                    else if (reader.TokenType is JsonTokenType.StartObject or JsonTokenType.StartArray)
+                    {
+                        reader.Skip();
+                    }
+
+                    continue;
+                }
+
+                if (!reader.Read())
+                {
+                    return null;
+                }
+
+                if (reader.TokenType is JsonTokenType.StartObject or JsonTokenType.StartArray)
+                {
+                    reader.Skip();
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return null;
+            }
+
+            return new KernelLogEntry(level, message);
+        }
+        catch (JsonException ex)
+        {
+            LogManager($"[WARN] Failed to parse log monitor payload: {ex.Message}");
             return null;
         }
     }
@@ -591,6 +817,36 @@ public partial class SingBoxManager
         if (reader.ValueTextEquals("memory"u8)) return 2;
         if (reader.ValueTextEquals("value"u8)) return 3;
         return -1;
+    }
+
+    private static string ReadClashLogLevel(ref Utf8JsonReader reader)
+    {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            return "Info";
+        }
+
+        if (reader.ValueTextEquals("trace"u8) || reader.ValueTextEquals("debug"u8))
+        {
+            return "Debug";
+        }
+
+        if (reader.ValueTextEquals("warn"u8) || reader.ValueTextEquals("warning"u8))
+        {
+            return "Warn";
+        }
+
+        if (reader.ValueTextEquals("error"u8))
+        {
+            return "Error";
+        }
+
+        if (reader.ValueTextEquals("fatal"u8) || reader.ValueTextEquals("panic"u8))
+        {
+            return "Fatal";
+        }
+
+        return "Info";
     }
 
     private static bool TryGetLongValue(ref Utf8JsonReader reader, out long value)

@@ -393,11 +393,20 @@ public partial class SingBoxManager
 
     private Uri BuildWebSocketUri(string relativePath)
     {
+        var pathAndQuery = relativePath.TrimStart('/');
+        var query = string.Empty;
+        var queryIndex = pathAndQuery.IndexOf('?');
+        if (queryIndex >= 0)
+        {
+            query = pathAndQuery[(queryIndex + 1)..];
+            pathAndQuery = pathAndQuery[..queryIndex];
+        }
+
         var builder = new UriBuilder(_apiAddress)
         {
             Scheme = _apiAddress.StartsWith("https", StringComparison.OrdinalIgnoreCase) ? "wss" : "ws",
-            Path = relativePath.TrimStart('/'),
-            Query = string.Empty
+            Path = pathAndQuery,
+            Query = query
         };
         return builder.Uri;
     }

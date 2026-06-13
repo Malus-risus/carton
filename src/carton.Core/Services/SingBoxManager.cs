@@ -13,7 +13,7 @@ public interface ISingBoxManager
     event EventHandler<TrafficInfo>? TrafficUpdated;
     event EventHandler<long>? MemoryUpdated;
     event EventHandler<string>? ManagerLogReceived;
-    event EventHandler<string>? LogReceived;
+    event EventHandler<KernelLogEntry>? LogReceived;
 
     ServiceState State { get; }
     bool IsRunning { get; }
@@ -56,9 +56,12 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
     private bool _disposed;
     private readonly ConcurrentQueue<string> _errorOutput = new();
     private int? _elevatedPid;
-    private string? _elevatedLogPath;
-    private CancellationTokenSource? _elevatedLogCts;
-    private Task? _elevatedLogTask;
+    private const int MaxErrorOutputLines = 80;
+    private int _startupLogCaptureSession;
+    private bool _captureStartupOutputForUi;
+    private long _windowsStartupLogSequence;
+    private bool _reportedWindowsStartupLogGap;
+    private Task? _logMonitorTask;
     private Task? _trafficMonitorTask;
     private Task? _memoryMonitorTask;
     private IntPtr _windowsJobHandle = IntPtr.Zero;
@@ -72,7 +75,7 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
     public event EventHandler<TrafficInfo>? TrafficUpdated;
     public event EventHandler<long>? MemoryUpdated;
     public event EventHandler<string>? ManagerLogReceived;
-    public event EventHandler<string>? LogReceived;
+    public event EventHandler<KernelLogEntry>? LogReceived;
 
     public ServiceState State => _state;
     public bool IsRunning => _state.Status == ServiceStatus.Running;
@@ -187,6 +190,7 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
             return false;
         }
 
+        var startupLogSession = 0;
         try
         {
             _errorOutput.Clear();
@@ -210,6 +214,7 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
                 }
             }
 
+            startupLogSession = BeginStartupLogCapture();
             var process = new Process
             {
                 StartInfo = new ProcessStartInfo
@@ -231,15 +236,15 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
 
             process.OutputDataReceived += (_, e) =>
             {
-                // Process redirection / exit callbacks run on thread-pool threads.
-                // Any exception escaping here would terminate the whole app via
-                // fail-fast (STATUS_STACK_BUFFER_OVERRUN / 0xC0000409) — the dialog
-                // users see as "stack-based buffer overrun". Never let one escape.
                 try
                 {
                     if (!string.IsNullOrEmpty(e.Data))
                     {
-                        LogKernel(e.Data);
+                        if (IsStartupLogCaptureActive(startupLogSession))
+                        {
+                            EnqueueErrorOutput(e.Data);
+                            LogStartupKernel(startupLogSession, e.Data);
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -254,8 +259,11 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
                 {
                     if (!string.IsNullOrEmpty(e.Data))
                     {
-                        _errorOutput.Enqueue(e.Data);
-                        LogKernel($"[ERROR] {e.Data}");
+                        if (IsStartupLogCaptureActive(startupLogSession))
+                        {
+                            EnqueueErrorOutput(e.Data);
+                            LogStartupKernel(startupLogSession, e.Data);
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -305,6 +313,7 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
             LogTiming(ready ? "start.api_ready" : "start.api_not_ready", readyTiming.Elapsed);
             if (!ready)
             {
+                StopStartupLogCapture(startupLogSession);
                 if (_process.HasExited)
                 {
                     var exitCode = _process.ExitCode;
@@ -326,6 +335,7 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
                 return false;
             }
 
+            _errorOutput.Clear();
             _state.StartTime = DateTime.Now;
             UpdateStatus(ServiceStatus.Running);
             LogManager("[INFO] sing-box started successfully");
@@ -337,6 +347,11 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
         }
         catch (Exception ex)
         {
+            if (startupLogSession != 0)
+            {
+                StopStartupLogCapture(startupLogSession);
+            }
+
             var error = $"Failed to start sing-box: {ex.Message}";
             LogManager($"[ERROR] {error}");
             await CleanupFailedStartAttemptAsync();
@@ -464,6 +479,7 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
     {
         var timing = Stopwatch.StartNew();
         LogTiming("stop.begin");
+        StopStartupLogCapture();
         var canUseElevatedStop = CanUseElevatedStop();
         var hasTargetProcess = _process != null || canUseElevatedStop;
         if (_process == null && !canUseElevatedStop)
@@ -503,10 +519,7 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
                 SetError(error);
                 return;
             }
-
-            await StopElevatedLogTailAsync();
             _elevatedPid = null;
-            _elevatedLogPath = null;
             ResetSessionMetrics();
 
             // Ensure the system proxy is cleared even if sing-box did not
@@ -617,7 +630,83 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
 
     private void LogKernel(string message)
     {
-        LogReceived?.Invoke(this, message);
+        LogReceived?.Invoke(this, new KernelLogEntry(string.Empty, message));
+    }
+
+    private void LogKernel(KernelLogEntry entry)
+    {
+        if (IsRuntimeDiagnosticLevel(entry.Level))
+        {
+            EnqueueErrorOutput(entry.Message);
+        }
+
+        LogReceived?.Invoke(this, entry);
+    }
+
+    private int BeginStartupLogCapture()
+    {
+        var session = Interlocked.Increment(ref _startupLogCaptureSession);
+        Interlocked.Exchange(ref _windowsStartupLogSequence, 0);
+        Volatile.Write(ref _reportedWindowsStartupLogGap, false);
+        Volatile.Write(ref _captureStartupOutputForUi, true);
+        return session;
+    }
+
+    private void StopStartupLogCapture()
+    {
+        Volatile.Write(ref _captureStartupOutputForUi, false);
+    }
+
+    private void StopStartupLogCapture(int session)
+    {
+        if (Volatile.Read(ref _startupLogCaptureSession) == session)
+        {
+            StopStartupLogCapture();
+        }
+    }
+
+    private bool IsStartupLogCaptureActive()
+    {
+        return Volatile.Read(ref _captureStartupOutputForUi);
+    }
+
+    private bool IsStartupLogCaptureActive(int session)
+    {
+        return IsStartupLogCaptureActive() &&
+               Volatile.Read(ref _startupLogCaptureSession) == session;
+    }
+
+    private void LogStartupKernel(int session, string message)
+    {
+        if (!string.IsNullOrEmpty(message) && IsStartupLogCaptureActive(session))
+        {
+            LogKernel(message);
+        }
+    }
+
+    private void LogStartupKernel(string message)
+    {
+        if (!string.IsNullOrEmpty(message) && IsStartupLogCaptureActive())
+        {
+            LogKernel(message);
+        }
+    }
+
+    private void EnqueueErrorOutput(string message)
+    {
+        _errorOutput.Enqueue(message);
+        while (_errorOutput.Count > MaxErrorOutputLines && _errorOutput.TryDequeue(out _))
+        {
+        }
+    }
+
+    private static bool IsRuntimeDiagnosticLevel(string level)
+    {
+        return string.Equals(level, "Warn", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(level, "Warning", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(level, "Error", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(level, "Fatal", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(level, "Panic", StringComparison.OrdinalIgnoreCase);
     }
 
     private void SetError(string message)
@@ -824,8 +913,6 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
 
         _process?.Kill(true);
         _process?.Dispose();
-        _elevatedLogCts?.Cancel();
-        _elevatedLogCts?.Dispose();
 
 
         if (_windowsJobHandle != IntPtr.Zero)

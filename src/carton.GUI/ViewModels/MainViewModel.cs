@@ -402,9 +402,9 @@ public partial class MainViewModel : ViewModelBase
         });
     }
 
-    private void OnLogReceived(object? sender, string log)
+    private void OnLogReceived(object? sender, KernelLogEntry log)
     {
-        _logStore.AddLog(log, LogSource.SingBox);
+        _logStore.AddSingBoxLog(log);
     }
 
     private void OnManagerLogReceived(object? sender, string log)
