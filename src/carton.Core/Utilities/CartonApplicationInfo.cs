@@ -1,5 +1,6 @@
 using System;
 using System.Reflection;
+using System.Text.RegularExpressions;
 
 namespace carton.Core.Utilities;
 
@@ -22,6 +23,46 @@ public static class CartonApplicationInfo
 
     public static string FormatSingBoxStatus(string? version)
         => $"sing-box {FormatSingBoxVersion(version)}";
+
+    public static bool SupportsNativeApi(string? version)
+    {
+        var normalized = NormalizeSingBoxVersion(version);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return false;
+        }
+
+        var versionMatch = Regex.Match(
+            normalized,
+            @"\bv?(?<version>\d+(?:\.\d+){1,})(?:[-+][^\s\)\]]+)?\b",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (!versionMatch.Success)
+        {
+            return false;
+        }
+
+        var coreVersion = versionMatch.Groups["version"].Value.Split('-', '+')[0];
+        var parts = coreVersion.Split('.');
+        if (parts.Length < 2)
+        {
+            return false;
+        }
+
+        if (!int.TryParse(parts[0], out var major) ||
+            !int.TryParse(parts[1], out var minor))
+        {
+            return false;
+        }
+
+        var patch = 0;
+        if (parts.Length >= 3 && !int.TryParse(parts[2], out patch))
+        {
+            patch = 0;
+        }
+
+        return major > 1 ||
+               major == 1 && (minor > 14 || minor == 14 && patch >= 0);
+    }
 
     public static void SetSingBoxVersion(string? version)
     {

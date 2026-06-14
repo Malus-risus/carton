@@ -1,6 +1,6 @@
-using carton.Core.Utilities;
 using System.Net;
 using System.Net.Http.Headers;
+using carton.Core.Utilities;
 
 namespace carton.Core.Services;
 
@@ -10,11 +10,19 @@ namespace carton.Core.Services;
 public static class HttpClientFactory
 {
     private const string UserAgentHeaderName = "User-Agent";
+    private static readonly TimeSpan LocalApiClientDisposeDelay = TimeSpan.FromSeconds(30);
+    private static readonly object LocalApiSyncRoot = new();
     private static HttpClient _localApi = null!;
     private static string _appVersion = "1.0";
     public static string LocalApiAddress { get; private set; } = string.Empty;
     public static int LocalApiPort { get; private set; }
     public static string? LocalApiSecret { get; private set; }
+    public static string LocalClashApiAddress { get; private set; } = string.Empty;
+    public static int LocalClashApiPort { get; private set; }
+    public static string? LocalClashApiSecret { get; private set; }
+    public static string LocalNativeApiAddress { get; private set; } = string.Empty;
+    public static int LocalNativeApiPort { get; private set; }
+    public static string? LocalNativeApiSecret { get; private set; }
 
     static HttpClientFactory()
     {
@@ -41,7 +49,12 @@ public static class HttpClientFactory
     /// </summary>
     public static HttpClient LocalApi => _localApi;
 
-    public static void UpdateLocalApi(string host, int port, string? secret)
+    public static void UpdateLocalApi(
+        string host,
+        int port,
+        string? secret,
+        int? clashApiPort = null,
+        string? clashApiSecret = null)
     {
         var client = CreateLoopbackClient(TimeSpan.FromSeconds(5));
         client.BaseAddress = new Uri($"http://{host}:{port}/");
@@ -51,22 +64,57 @@ public static class HttpClientFactory
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", secret);
         }
 
-        _localApi = client;
-        LocalApiAddress = $"http://{host}:{port}";
-        LocalApiPort = port;
-        LocalApiSecret = string.IsNullOrWhiteSpace(secret) ? null : secret;
-    }
-
-    public static HttpClient CreateLocalApiProbeClient(TimeSpan timeout)
-    {
-        var client = CreateLoopbackClient(timeout);
-
-        if (!string.IsNullOrWhiteSpace(LocalApiSecret))
+        var effectiveClashPort = clashApiPort.GetValueOrDefault(port);
+        var effectiveClashSecret = clashApiSecret ?? secret;
+        HttpClient? oldClient;
+        lock (LocalApiSyncRoot)
         {
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", LocalApiSecret);
+            oldClient = _localApi;
+            LocalApiAddress = $"http://{host}:{port}";
+            LocalApiPort = port;
+            LocalApiSecret = string.IsNullOrWhiteSpace(secret) ? null : secret;
+            LocalClashApiAddress = $"http://{host}:{effectiveClashPort}";
+            LocalClashApiPort = effectiveClashPort;
+            LocalClashApiSecret = string.IsNullOrWhiteSpace(effectiveClashSecret) ? null : effectiveClashSecret;
+            _localApi = client;
         }
 
-        return client;
+        if (oldClient != null)
+        {
+            _ = DisposeLocalApiClientLaterAsync(oldClient);
+        }
+    }
+
+    private static async Task DisposeLocalApiClientLaterAsync(HttpClient client)
+    {
+        try
+        {
+            await Task.Delay(LocalApiClientDisposeDelay).ConfigureAwait(false);
+            client.Dispose();
+        }
+        catch
+        {
+        }
+    }
+
+    public static void UpdateLocalNativeApi(string host, int port, string? secret)
+    {
+        if (port is <= 0 or > 65535)
+        {
+            ClearLocalNativeApi();
+            return;
+        }
+
+        LocalNativeApiAddress = $"http://{host}:{port}";
+        LocalNativeApiPort = port;
+        LocalNativeApiSecret = string.IsNullOrWhiteSpace(secret) ? null : secret;
+    }
+
+    public static void ClearLocalNativeApi()
+    {
+        LocalNativeApiAddress = string.Empty;
+        LocalNativeApiPort = 0;
+        LocalNativeApiSecret = null;
     }
 
     public static HttpClient CreateLoopbackClient(TimeSpan timeout)
@@ -132,7 +180,9 @@ public static class HttpClientFactory
     }
 
     private static void OnSingBoxVersionChanged(string? _)
-        => RefreshExternalUserAgent();
+    {
+        RefreshExternalUserAgent();
+    }
 
     private static void RefreshExternalUserAgent()
     {

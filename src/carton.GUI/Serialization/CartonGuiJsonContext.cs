@@ -8,6 +8,7 @@ namespace carton.GUI.Serialization;
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     UnmappedMemberHandling = JsonUnmappedMemberHandling.Skip,
     GenerationMode = JsonSourceGenerationMode.Metadata | JsonSourceGenerationMode.Serialization)]
-[JsonSerializable(typeof(ClashConfigSnapshot))]
 [JsonSerializable(typeof(MainWindowState))]
+[JsonSerializable(typeof(SingBoxDashboardServersState))]
+[JsonSerializable(typeof(SingBoxDashboardServer))]
 internal partial class CartonGuiJsonContext : JsonSerializerContext;

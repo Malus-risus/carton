@@ -252,6 +252,15 @@ public class KernelManager : IKernelManager
             return null;
         }
 
+        var semanticVersionMatch = Regex.Match(
+            line,
+            @"\bv?(?:\d+\.){1,}\d+(?:[-+][^\s\)\]]+)?\b",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (semanticVersionMatch.Success)
+        {
+            return semanticVersionMatch.Value.Trim();
+        }
+
         var prefixedMatch = Regex.Match(
             line,
             @"sing-box(?:\s+version)?\s+([^\s\(\[]+)",
@@ -259,18 +268,6 @@ public class KernelManager : IKernelManager
         if (prefixedMatch.Success)
         {
             return prefixedMatch.Groups[1].Value.Trim();
-        }
-
-        if (!requireSingBoxPrefix)
-        {
-            var fallbackMatch = Regex.Match(
-                line,
-                @"\bv?(?:\d+\.){1,}\d+(?:[-+][^\s\)\]]+)?\b",
-                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-            if (fallbackMatch.Success)
-            {
-                return fallbackMatch.Value.Trim();
-            }
         }
 
         return null;

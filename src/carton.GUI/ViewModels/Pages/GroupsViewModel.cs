@@ -412,7 +412,7 @@ public partial class GroupsViewModel : PageViewModelBase
         return delay;
     }
 
-    private static bool ShouldDisplayGroup(OutboundGroup group, ClashConfigSnapshot? clashConfig)
+    private static bool ShouldDisplayGroup(OutboundGroup group, ApiModeConfigSnapshot? clashConfig)
     {
         if (!string.Equals(group.Tag, "GLOBAL", StringComparison.OrdinalIgnoreCase))
         {

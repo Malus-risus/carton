@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using carton.Core.Models;
+using carton.Core.Services.SingBoxApi;
 using carton.Core.Utilities;
 
 namespace carton.Core.Services;
@@ -23,6 +24,8 @@ public interface ISingBoxManager
     Task<(bool Success, string Message)> CheckConfigAsync(string configContent);
     Task StopAsync();
     Task ReloadAsync();
+    Task<ApiModeConfigSnapshot?> GetModeConfigAsync();
+    Task<bool> SetModeAsync(string mode);
     Task<List<OutboundGroup>> GetOutboundGroupsAsync();
     Task SelectOutboundAsync(string groupTag, string outboundTag);
     Task<Dictionary<string, int>> RunGroupDelayTestAsync(string groupTag, string? testUrl = null, int timeoutMs = 5000);
@@ -64,6 +67,7 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
     private Task? _logMonitorTask;
     private Task? _trafficMonitorTask;
     private Task? _memoryMonitorTask;
+    private CancellationTokenSource? _monitorCancellation;
     private IntPtr _windowsJobHandle = IntPtr.Zero;
     private string? _windowsElevatedHelperToken;
     private int? _windowsElevatedHelperPid;
@@ -81,6 +85,9 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
 
     public ServiceState State => _state;
     public bool IsRunning => _state.Status == ServiceStatus.Running;
+
+    private ISingBoxApiClient CreateApiClient()
+        => SingBoxApiClientFactory.Create(LogManager);
 
     public SingBoxManager(string singBoxPath, string workingDirectory, int apiPort = 9090)
     {
@@ -484,6 +491,7 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
         var timing = Stopwatch.StartNew();
         LogTiming("stop.begin");
         StopStartupLogCapture();
+        CancelRuntimeMonitors();
         var canUseElevatedStop = CanUseElevatedStop();
         var hasTargetProcess = _process != null || canUseElevatedStop;
         if (_process == null && !canUseElevatedStop)
@@ -586,6 +594,11 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
 
     private void UpdateStatus(ServiceStatus status)
     {
+        if (status != ServiceStatus.Running)
+        {
+            CancelRuntimeMonitors();
+        }
+
         _state.Status = status;
         _state.ErrorMessage = null;
         StatusChanged?.Invoke(this, status);
@@ -715,6 +728,7 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
 
     private void SetError(string message)
     {
+        CancelRuntimeMonitors();
         _state.Status = ServiceStatus.Error;
         _state.ErrorMessage = message;
         StatusChanged?.Invoke(this, ServiceStatus.Error);
@@ -917,6 +931,9 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
 
         _process?.Kill(true);
         _process?.Dispose();
+        CancelRuntimeMonitors();
+        _monitorCancellation?.Dispose();
+        _monitorCancellation = null;
 
 
         if (_windowsJobHandle != IntPtr.Zero)

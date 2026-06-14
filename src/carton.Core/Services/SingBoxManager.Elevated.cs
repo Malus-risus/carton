@@ -28,7 +28,7 @@ public partial class SingBoxManager
                     continue;
                 }
 
-                if (string.Equals(ReadString(inbound, "type"), "tun", StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(ReadJsonString(inbound, "type"), "tun", StringComparison.OrdinalIgnoreCase))
                 {
                     return true;
                 }
@@ -357,14 +357,9 @@ public partial class SingBoxManager
                 }
             }
 
-            try
+            if (await IsApiReachableAsync())
             {
-                using var cts = new CancellationTokenSource(LocalApiProbeTimeout);
-                using var client = HttpClientFactory.CreateLocalApiProbeClient(LocalApiProbeTimeout);
-                using var response = await client.GetAsync($"{_apiAddress}/version", cts.Token);
-                LogManager($"[INFO] API responded with status {(int)response.StatusCode}");
-
-                // API is reachable, discover PID if we don't have one
+                LogManager("[INFO] API probe succeeded");
                 if (!_elevatedPid.HasValue || _elevatedPid.Value <= 0)
                 {
                     var discoveredPid = await TryFindProcessPidByApiPortAsync();
@@ -373,12 +368,9 @@ public partial class SingBoxManager
                         _elevatedPid = discoveredPid.Value;
                     }
                 }
-                LogTiming("api_ready.http_version", timing.Elapsed);
+
+                LogTiming("api_ready.protocol_probe", timing.Elapsed);
                 return true;
-            }
-            catch
-            {
-                // API not ready yet
             }
 
             // For non-elevated mode, check if process crashed
@@ -483,5 +475,18 @@ public partial class SingBoxManager
         public int? Pid { get; init; }
         public string? ErrorMessage { get; init; }
         public string RawOutput { get; init; } = string.Empty;
+    }
+
+    private static string ReadJsonString(JsonElement element, string propertyName)
+    {
+        if (element.ValueKind != JsonValueKind.Object ||
+            !element.TryGetProperty(propertyName, out var property))
+        {
+            return string.Empty;
+        }
+
+        return property.ValueKind == JsonValueKind.String
+            ? property.GetString() ?? string.Empty
+            : property.ToString();
     }
 }

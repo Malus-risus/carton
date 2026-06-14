@@ -8,6 +8,10 @@
              x:Class="carton.Views.Pages.DashboardView"
              x:DataType="vm:DashboardViewModel">
 
+  <UserControl.Resources>
+    <StreamGeometry x:Key="DashboardWebUiIconData">M12 3 C7 3 3 7 3 12 C3 17 7 21 12 21 C17 21 21 17 21 12 C21 7 17 3 12 3 Z M5.2 11 H8.1 C8.2 8.7 8.8 6.7 9.8 5.2 C7.5 6 5.8 8.2 5.2 11 Z M5.2 13 C5.8 15.8 7.5 18 9.8 18.8 C8.8 17.3 8.2 15.3 8.1 13 Z M10.1 13 C10.2 15.6 11 17.8 12 18.9 C13 17.8 13.8 15.6 13.9 13 Z M13.9 11 C13.8 8.4 13 6.2 12 5.1 C11 6.2 10.2 8.4 10.1 11 Z M14.2 18.8 C16.5 18 18.2 15.8 18.8 13 H15.9 C15.8 15.3 15.2 17.3 14.2 18.8 Z M15.9 11 H18.8 C18.2 8.2 16.5 6 14.2 5.2 C15.2 6.7 15.8 8.7 15.9 11 Z</StreamGeometry>
+  </UserControl.Resources>
+
   <UserControl.Styles>
     <Style Selector="Border.sfmCard">
       <Setter Property="CornerRadius" Value="16"/>
@@ -225,12 +229,30 @@
                   </Button>
                   <Button Grid.Column="5"
                           Classes="iconButton"
-                          Command="{Binding OpenWebUiCommand}"
+                          Command="{Binding OpenClashWebUiCommand}"
+                          IsVisible="{Binding !ShowSingBoxWebUiOption}"
                           IsEnabled="{Binding ShowDashboardMetrics}"
                           ToolTip.Tip="{DynamicResource Dashboard.Button.OpenWebUi}">
                     <PathIcon Width="14"
                               Height="14"
-                              Data="M12 3 C7 3 3 7 3 12 C3 17 7 21 12 21 C17 21 21 17 21 12 C21 7 17 3 12 3 Z M5.2 11 H8.1 C8.2 8.7 8.8 6.7 9.8 5.2 C7.5 6 5.8 8.2 5.2 11 Z M5.2 13 C5.8 15.8 7.5 18 9.8 18.8 C8.8 17.3 8.2 15.3 8.1 13 Z M10.1 13 C10.2 15.6 11 17.8 12 18.9 C13 17.8 13.8 15.6 13.9 13 Z M13.9 11 C13.8 8.4 13 6.2 12 5.1 C11 6.2 10.2 8.4 10.1 11 Z M14.2 18.8 C16.5 18 18.2 15.8 18.8 13 H15.9 C15.8 15.3 15.2 17.3 14.2 18.8 Z M15.9 11 H18.8 C18.2 8.2 16.5 6 14.2 5.2 C15.2 6.7 15.8 8.7 15.9 11 Z"/>
+                              Data="{StaticResource DashboardWebUiIconData}"/>
+                  </Button>
+                  <Button Grid.Column="5"
+                          Classes="iconButton"
+                          IsVisible="{Binding ShowSingBoxWebUiOption}"
+                          IsEnabled="{Binding ShowDashboardMetrics}"
+                          ToolTip.Tip="{DynamicResource Dashboard.Button.OpenWebUi}">
+                    <Button.Flyout>
+                      <MenuFlyout Placement="Bottom">
+                        <MenuItem Header="{DynamicResource Dashboard.Menu.OpenClashWebUi}"
+                                  Command="{Binding OpenClashWebUiCommand}"/>
+                        <MenuItem Header="{DynamicResource Dashboard.Menu.OpenSingBoxWebUi}"
+                                  Command="{Binding OpenSingBoxWebUiCommand}"/>
+                      </MenuFlyout>
+                    </Button.Flyout>
+                    <PathIcon Width="14"
+                              Height="14"
+                              Data="{StaticResource DashboardWebUiIconData}"/>
                   </Button>
                 </Grid>
 

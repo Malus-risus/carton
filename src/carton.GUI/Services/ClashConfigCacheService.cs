@@ -1,6 +1,5 @@
 using System;
-using System.Collections.Generic;
-using System.Text.Json.Serialization;
+using carton.Core.Models;
 
 namespace carton.GUI.Services;
 
@@ -13,32 +12,38 @@ public sealed class ClashConfigCacheService
     {
     }
 
-    public ClashConfigSnapshot? Current { get; private set; }
+    public ApiModeConfigSnapshot? Current { get; private set; }
     public bool IsDirty { get; private set; }
+    public DateTimeOffset LastUpdatedUtc { get; private set; }
 
-    public void Update(ClashConfigSnapshot? config, bool isDirty = false)
+    public void Update(ApiModeConfigSnapshot? config, bool isDirty = false)
     {
         Current = config;
         IsDirty = isDirty;
+        LastUpdatedUtc = config == null ? default : DateTimeOffset.UtcNow;
+    }
+
+    public bool TryGetFresh(TimeSpan maxAge, out ApiModeConfigSnapshot? config)
+    {
+        config = Current;
+        if (config == null || IsDirty)
+        {
+            return false;
+        }
+
+        return LastUpdatedUtc != default &&
+               LastUpdatedUtc.Add(maxAge) > DateTimeOffset.UtcNow;
     }
 
     public void Clear()
     {
         Current = null;
         IsDirty = false;
+        LastUpdatedUtc = default;
     }
 
     public void MarkClean()
     {
         IsDirty = false;
     }
-}
-
-public sealed class ClashConfigSnapshot
-{
-    [JsonPropertyName("mode")]
-    public string? Mode { get; set; }
-
-    [JsonPropertyName("mode-list")]
-    public List<string>? ModeList { get; set; }
 }
