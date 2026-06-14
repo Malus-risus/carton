@@ -13,9 +13,11 @@ public sealed class LogStore
     private const int MaxMessageLength = 2048;
     private readonly LogRingBuffer _entries = new(MaxEntries);
     private readonly object _syncRoot = new();
-    private LogEntryRecord[] _snapshotCache = Array.Empty<LogEntryRecord>();
-    private bool _snapshotDirty = true;
+    private readonly object _timeSyncRoot = new();
     private int _pendingEntriesChanged;
+    private long _nextSequence;
+    private long _cachedTimeSecond = -1;
+    private string _cachedTimeText = string.Empty;
 
     public event EventHandler? EntriesChanged;
 
@@ -40,24 +42,20 @@ public sealed class LogStore
     {
         lock (_syncRoot)
         {
+            entry = entry with { Sequence = ++_nextSequence };
             _entries.Add(entry);
-            _snapshotDirty = true;
         }
 
         RaiseEntriesChanged();
     }
 
-    public IReadOnlyList<LogEntryRecord> GetSnapshot()
+    public void CopySnapshotTo(List<LogEntryRecord> destination)
     {
+        ArgumentNullException.ThrowIfNull(destination);
+
         lock (_syncRoot)
         {
-            if (_snapshotDirty)
-            {
-                _snapshotCache = _entries.ToArray();
-                _snapshotDirty = false;
-            }
-
-            return _snapshotCache;
+            _entries.CopyTo(destination);
         }
     }
 
@@ -66,16 +64,14 @@ public sealed class LogStore
         lock (_syncRoot)
         {
             _entries.Clear();
-            _snapshotDirty = true;
-            _snapshotCache = Array.Empty<LogEntryRecord>();
         }
 
         RaiseEntriesChanged();
     }
 
-    private static LogEntryRecord CreateEntry(string message, LogSource source)
+    private LogEntryRecord CreateEntry(string message, LogSource source)
     {
-        var now = DateTime.Now.ToString("HH:mm:ss");
+        var now = GetCurrentTimeText();
         var (time, level, parsedMessage) = source switch
         {
             LogSource.Carton => LogParser.ParseCartonLog(message, now),
@@ -88,10 +84,10 @@ public sealed class LogStore
             parsedMessage = parsedMessage[..MaxMessageLength] + "...";
         }
 
-        return new LogEntryRecord(time, source, level, parsedMessage);
+        return new LogEntryRecord(0, time, source, level, parsedMessage);
     }
 
-    private static LogEntryRecord CreateSingBoxEntry(KernelLogEntry log)
+    private LogEntryRecord CreateSingBoxEntry(KernelLogEntry log)
     {
         if (string.IsNullOrWhiteSpace(log.Level))
         {
@@ -105,10 +101,33 @@ public sealed class LogStore
         }
 
         return new LogEntryRecord(
-            DateTime.Now.ToString("HH:mm:ss"),
+            0,
+            GetCurrentTimeText(),
             LogSource.SingBox,
             log.Level,
             message);
+    }
+
+    private string GetCurrentTimeText()
+    {
+        var now = DateTime.Now;
+        var second = now.Ticks / TimeSpan.TicksPerSecond;
+        if (Volatile.Read(ref _cachedTimeSecond) == second)
+        {
+            return Volatile.Read(ref _cachedTimeText);
+        }
+
+        lock (_timeSyncRoot)
+        {
+            if (_cachedTimeSecond == second)
+            {
+                return _cachedTimeText;
+            }
+
+            _cachedTimeText = now.ToString("HH:mm:ss");
+            Volatile.Write(ref _cachedTimeSecond, second);
+            return _cachedTimeText;
+        }
     }
 
     private void RaiseEntriesChanged()
@@ -137,7 +156,7 @@ public sealed class LogStore
     }
 }
 
-public readonly record struct LogEntryRecord(string Time, LogSource Source, string Level, string Message);
+public readonly record struct LogEntryRecord(long Sequence, string Time, LogSource Source, string Level, string Message);
 
 internal sealed class LogRingBuffer
 {
@@ -163,15 +182,14 @@ internal sealed class LogRingBuffer
         _start = (_start + 1) % _buffer.Length;
     }
 
-    public LogEntryRecord[] ToArray()
+    public void CopyTo(List<LogEntryRecord> destination)
     {
-        var result = new LogEntryRecord[_count];
+        destination.Clear();
+        destination.EnsureCapacity(_count);
         for (var i = 0; i < _count; i++)
         {
-            result[i] = _buffer[(_start + i) % _buffer.Length];
+            destination.Add(_buffer[(_start + i) % _buffer.Length]);
         }
-
-        return result;
     }
 
     public void Clear()

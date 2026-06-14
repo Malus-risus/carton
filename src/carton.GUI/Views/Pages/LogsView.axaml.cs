@@ -1,17 +1,14 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
-using Avalonia.Data.Converters;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using carton.ViewModels;
 using System;
 using System.Collections.Specialized;
 using System.ComponentModel;
-using System.Globalization;
 
 namespace carton.Views.Pages;
 
@@ -24,6 +21,7 @@ public partial class LogsView : UserControl
     private ListBox? _logsListBox;
     private ScrollViewer? _scrollViewer;
     private LogsViewModel? _viewModel;
+    private INotifyCollectionChanged? _logsCollection;
     private bool _autoScrollToBottom = true;
     private bool _pendingScrollToBottom;
     private int _pendingScrollToBottomAttempts;
@@ -136,7 +134,7 @@ public partial class LogsView : UserControl
         _viewModel = viewModel;
         if (_viewModel != null)
         {
-            _viewModel.Logs.CollectionChanged += OnLogsCollectionChanged;
+            AttachLogsCollection(_viewModel.Logs);
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
             _viewModel.VisibleLogsRefreshed += OnVisibleLogsRefreshed;
             _autoScrollToBottom = _viewModel.IsAutoScrollToLatest;
@@ -152,11 +150,34 @@ public partial class LogsView : UserControl
     {
         if (_viewModel != null)
         {
-            _viewModel.Logs.CollectionChanged -= OnLogsCollectionChanged;
+            DetachLogsCollection();
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
             _viewModel.VisibleLogsRefreshed -= OnVisibleLogsRefreshed;
             _viewModel = null;
         }
+    }
+
+    private void AttachLogsCollection(INotifyCollectionChanged logs)
+    {
+        if (ReferenceEquals(_logsCollection, logs))
+        {
+            return;
+        }
+
+        DetachLogsCollection();
+        _logsCollection = logs;
+        _logsCollection.CollectionChanged += OnLogsCollectionChanged;
+    }
+
+    private void DetachLogsCollection()
+    {
+        if (_logsCollection == null)
+        {
+            return;
+        }
+
+        _logsCollection.CollectionChanged -= OnLogsCollectionChanged;
+        _logsCollection = null;
     }
 
     private void OnVisibleLogsRefreshed(object? sender, EventArgs e)
@@ -211,6 +232,15 @@ public partial class LogsView : UserControl
         {
             _autoScrollToBottom = _viewModel.IsAutoScrollToLatest;
             if (_autoScrollToBottom)
+            {
+                RequestScrollToBottom();
+            }
+        }
+
+        if (e.PropertyName == nameof(LogsViewModel.Logs))
+        {
+            AttachLogsCollection(_viewModel.Logs);
+            if (_autoScrollToBottom && _viewModel.Logs.Count > 0)
             {
                 RequestScrollToBottom();
             }
@@ -470,30 +500,4 @@ public partial class LogsView : UserControl
 
         return null;
     }
-}
-
-public sealed class LogLevelBrushConverter : IValueConverter
-{
-    private static readonly SolidColorBrush FatalBrush = new(Color.FromRgb(181, 28, 41));
-    private static readonly SolidColorBrush ErrorBrush = new(Color.FromRgb(231, 72, 86));
-    private static readonly SolidColorBrush WarnBrush = new(Color.FromRgb(249, 168, 37));
-    private static readonly SolidColorBrush InfoBrush = new(Color.FromRgb(0, 120, 212));
-    private static readonly SolidColorBrush DebugBrush = new(Color.FromRgb(128, 128, 128));
-    private static readonly SolidColorBrush DefaultBrush = new(Color.FromArgb(80, 128, 128, 128));
-
-    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
-    {
-        return (value as string)?.ToUpperInvariant() switch
-        {
-            "FATAL" => FatalBrush,
-            "ERROR" => ErrorBrush,
-            "WARN" or "WARNING" => WarnBrush,
-            "INFO" => InfoBrush,
-            "DEBUG" => DebugBrush,
-            _ => DefaultBrush,
-        };
-    }
-
-    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
-        => throw new NotSupportedException();
 }

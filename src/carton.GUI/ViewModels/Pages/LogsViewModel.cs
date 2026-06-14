@@ -26,6 +26,14 @@ public partial class LogsViewModel : PageViewModelBase, IDisposable
     private readonly ILocalizationService _localizationService;
     private readonly LogStore _logStore;
     private readonly DispatcherTimer _filterRefreshTimer;
+    private readonly List<LogEntryRecord> _snapshotBuffer = new(1024);
+    private bool _hasAppliedFilterState;
+    private long _lastAppliedSequence;
+    private string _appliedSelectedLevel = "All";
+    private LogSourceFilter _appliedSourceFilter = LogSourceFilter.All;
+    private string _appliedSearchText = string.Empty;
+    private string _appliedCartonSourceDisplayName = string.Empty;
+    private string _appliedSingBoxSourceDisplayName = string.Empty;
 
     public override NavigationPage PageType => NavigationPage.Logs;
     public event EventHandler? VisibleLogsRefreshed;
@@ -210,8 +218,11 @@ public partial class LogsViewModel : PageViewModelBase, IDisposable
     {
         StopPendingFilterRefresh();
         SelectedLogs.Clear();
-        Logs.Clear();
+        Logs = new ObservableCollection<LogEntryViewModel>();
         SelectedLog = null;
+        _snapshotBuffer.Clear();
+        _snapshotBuffer.TrimExcess();
+        _hasAppliedFilterState = false;
     }
 
     private void RequestApplyFilters()
@@ -276,22 +287,82 @@ public partial class LogsViewModel : PageViewModelBase, IDisposable
             return;
         }
 
-        var snapshot = _logStore.GetSnapshot();
+        _logStore.CopySnapshotTo(_snapshotBuffer);
         var selectedLevel = SelectedLevel;
         var selectedFilter = SelectedSourceFilter?.Filter ?? LogSourceFilter.All;
         var searchText = SearchText;
         var hasSearchText = !string.IsNullOrWhiteSpace(searchText);
         var cartonSourceDisplayName = _localizationService["Logs.Source.Carton"];
         var singBoxSourceDisplayName = _localizationService["Logs.Source.SingBox"];
+        var latestSequence = _snapshotBuffer.Count == 0
+            ? _lastAppliedSequence
+            : _snapshotBuffer[^1].Sequence;
 
-        var writeIndex = 0;
+        var filterStateChanged =
+            !_hasAppliedFilterState ||
+            latestSequence < _lastAppliedSequence ||
+            !string.Equals(_appliedSelectedLevel, selectedLevel, StringComparison.Ordinal) ||
+            _appliedSourceFilter != selectedFilter ||
+            !string.Equals(_appliedSearchText, searchText, StringComparison.Ordinal) ||
+            !string.Equals(_appliedCartonSourceDisplayName, cartonSourceDisplayName, StringComparison.Ordinal) ||
+            !string.Equals(_appliedSingBoxSourceDisplayName, singBoxSourceDisplayName, StringComparison.Ordinal);
+
+        var visibleLogsChanged = filterStateChanged
+            ? RebuildVisibleLogs(
+                _snapshotBuffer,
+                selectedLevel,
+                selectedFilter,
+                searchText,
+                hasSearchText,
+                cartonSourceDisplayName,
+                singBoxSourceDisplayName)
+            : AppendVisibleLogChanges(
+                _snapshotBuffer,
+                selectedLevel,
+                selectedFilter,
+                searchText,
+                hasSearchText,
+                cartonSourceDisplayName,
+                singBoxSourceDisplayName);
+
+        _lastAppliedSequence = latestSequence;
+        _appliedSelectedLevel = selectedLevel;
+        _appliedSourceFilter = selectedFilter;
+        _appliedSearchText = searchText;
+        _appliedCartonSourceDisplayName = cartonSourceDisplayName;
+        _appliedSingBoxSourceDisplayName = singBoxSourceDisplayName;
+        _hasAppliedFilterState = true;
+
+        if (visibleLogsChanged)
+        {
+            VisibleLogsRefreshed?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private bool RebuildVisibleLogs(
+        IReadOnlyList<LogEntryRecord> snapshot,
+        string selectedLevel,
+        LogSourceFilter selectedFilter,
+        string searchText,
+        bool hasSearchText,
+        string cartonSourceDisplayName,
+        string singBoxSourceDisplayName)
+    {
         var selectedLog = SelectedLog;
-        var selectedExists = selectedLog == null;
-        var selectedTime = selectedLog?.Time;
-        var selectedSource = selectedLog?.Source;
-        var selectedLevelText = selectedLog?.Level;
-        var selectedMessage = selectedLog?.Message;
+        var selectedSequence = selectedLog?.Sequence;
         LogEntryViewModel? matchedSelectedLog = null;
+        HashSet<long>? selectedSequences = null;
+        if (SelectedLogs.Count > 0)
+        {
+            selectedSequences = new HashSet<long>(SelectedLogs.Count);
+            foreach (var log in SelectedLogs)
+            {
+                selectedSequences.Add(log.Sequence);
+            }
+        }
+
+        SelectedLogs.Clear();
+        Logs.Clear();
 
         for (var i = 0; i < snapshot.Count; i++)
         {
@@ -302,83 +373,104 @@ public partial class LogsViewModel : PageViewModelBase, IDisposable
             }
 
             var sourceDisplayName = GetSourceDisplayName(entry.Source, cartonSourceDisplayName, singBoxSourceDisplayName);
-            LogEntryViewModel log;
-            if (writeIndex < Logs.Count)
-            {
-                log = Logs[writeIndex];
-                UpdateLog(log, entry, sourceDisplayName);
-            }
-            else
-            {
-                log = new LogEntryViewModel
-                {
-                    Time = entry.Time,
-                    Source = entry.Source,
-                    SourceDisplayName = GetSourceDisplayName(entry.Source),
-                    Level = entry.Level,
-                    Message = entry.Message
-                };
+            var log = CreateLogViewModel(entry, sourceDisplayName);
+            Logs.Add(log);
 
-                Logs.Add(log);
-            }
-
-            writeIndex++;
-
-            if (!selectedExists &&
-                log.Time == selectedTime &&
-                log.Source == selectedSource &&
-                log.Level == selectedLevelText &&
-                log.Message == selectedMessage)
+            if (selectedSequence == entry.Sequence)
             {
-                selectedExists = true;
                 matchedSelectedLog = log;
             }
+
+            if (selectedSequences?.Contains(entry.Sequence) == true)
+            {
+                SelectedLogs.Add(log);
+            }
         }
 
-        for (var i = Logs.Count - 1; i >= writeIndex; i--)
-        {
-            Logs.RemoveAt(i);
-        }
-
-        if (!selectedExists)
-        {
-            SelectedLogs.Clear();
-            SelectedLog = null;
-        }
-        else if (matchedSelectedLog != null && !ReferenceEquals(SelectedLog, matchedSelectedLog))
-        {
-            SelectedLog = matchedSelectedLog;
-        }
-
-        VisibleLogsRefreshed?.Invoke(this, EventArgs.Empty);
+        SelectedLog = matchedSelectedLog;
+        return true;
     }
 
-    private static void UpdateLog(LogEntryViewModel log, LogEntryRecord entry, string sourceDisplayName)
+    private bool AppendVisibleLogChanges(
+        IReadOnlyList<LogEntryRecord> snapshot,
+        string selectedLevel,
+        LogSourceFilter selectedFilter,
+        string searchText,
+        bool hasSearchText,
+        string cartonSourceDisplayName,
+        string singBoxSourceDisplayName)
     {
-        if (!string.Equals(log.Time, entry.Time, StringComparison.Ordinal))
+        if (snapshot.Count == 0)
         {
-            log.Time = entry.Time;
+            var hadLogs = Logs.Count > 0 || SelectedLogs.Count > 0 || SelectedLog != null;
+            SelectedLogs.Clear();
+            Logs.Clear();
+            SelectedLog = null;
+            return hadLogs;
         }
 
-        if (log.Source != entry.Source)
+        var removedAny = false;
+        var addedAny = false;
+        var oldestSequence = snapshot[0].Sequence;
+        while (Logs.Count > 0 && Logs[0].Sequence < oldestSequence)
         {
-            log.Source = entry.Source;
+            Logs.RemoveAt(0);
+            removedAny = true;
         }
 
-        if (!string.Equals(log.SourceDisplayName, sourceDisplayName, StringComparison.Ordinal))
+        for (var i = 0; i < snapshot.Count; i++)
         {
-            log.SourceDisplayName = sourceDisplayName;
+            var entry = snapshot[i];
+            if (entry.Sequence <= _lastAppliedSequence)
+            {
+                continue;
+            }
+
+            if (!MatchesFilter(entry, selectedLevel, selectedFilter, searchText, hasSearchText, cartonSourceDisplayName, singBoxSourceDisplayName))
+            {
+                continue;
+            }
+
+            var sourceDisplayName = GetSourceDisplayName(entry.Source, cartonSourceDisplayName, singBoxSourceDisplayName);
+            Logs.Add(CreateLogViewModel(entry, sourceDisplayName));
+            addedAny = true;
         }
 
-        if (!string.Equals(log.Level, entry.Level, StringComparison.Ordinal))
+        if (removedAny)
         {
-            log.Level = entry.Level;
+            PruneSelection();
         }
 
-        if (!string.Equals(log.Message, entry.Message, StringComparison.Ordinal))
+        return removedAny || addedAny;
+    }
+
+    private void PruneSelection()
+    {
+        if (SelectedLog != null && !Logs.Contains(SelectedLog))
         {
-            log.Message = entry.Message;
+            SelectedLog = null;
         }
+
+        for (var i = SelectedLogs.Count - 1; i >= 0; i--)
+        {
+            if (!Logs.Contains(SelectedLogs[i]))
+            {
+                SelectedLogs.RemoveAt(i);
+            }
+        }
+    }
+
+    private static LogEntryViewModel CreateLogViewModel(LogEntryRecord entry, string sourceDisplayName)
+    {
+        return new LogEntryViewModel
+        {
+            Sequence = entry.Sequence,
+            Time = entry.Time,
+            Source = entry.Source,
+            SourceDisplayName = sourceDisplayName,
+            Level = entry.Level,
+            Message = entry.Message
+        };
     }
 
     private static bool MatchesFilter(
@@ -490,22 +582,19 @@ public partial class LogsViewModel : PageViewModelBase, IDisposable
     }
 }
 
-public partial class LogEntryViewModel : ObservableObject
+public sealed class LogEntryViewModel
 {
-    [ObservableProperty]
-    private string _time = string.Empty;
+    public long Sequence { get; init; }
 
-    [ObservableProperty]
-    private LogSource _source;
+    public string Time { get; init; } = string.Empty;
 
-    [ObservableProperty]
-    private string _sourceDisplayName = string.Empty;
+    public LogSource Source { get; init; }
 
-    [ObservableProperty]
-    private string _level = string.Empty;
+    public string SourceDisplayName { get; init; } = string.Empty;
 
-    [ObservableProperty]
-    private string _message = string.Empty;
+    public string Level { get; init; } = string.Empty;
+
+    public string Message { get; init; } = string.Empty;
 }
 
 public partial class LogSourceFilterOptionViewModel : ObservableObject

@@ -75,7 +75,9 @@ public partial class SingBoxManager
         ClientWebSocket? webSocket = null;
         var skippingOversizedMessage = false;
         var consecutiveFailures = 0;
-        var wsUri = BuildWebSocketUri("logs?level=trace");
+        var monitorLevel = _logMonitorLevel;
+        var wsUri = BuildWebSocketUri($"logs?level={Uri.EscapeDataString(monitorLevel)}");
+        LogManager($"[INFO] Log monitor subscribed at level: {monitorLevel}");
 
         try
         {
@@ -582,6 +584,27 @@ public partial class SingBoxManager
             LogManager($"[WARN] Failed to parse log monitor payload: {ex.Message}");
             return null;
         }
+    }
+
+    private string ReadLogMonitorLevel(string configPath)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(File.ReadAllBytes(configPath));
+            if (document.RootElement.TryGetProperty("log", out var logElement) &&
+                logElement.ValueKind == JsonValueKind.Object &&
+                logElement.TryGetProperty("level", out var levelElement) &&
+                levelElement.ValueKind == JsonValueKind.String)
+            {
+                return SingBoxLogLevelHelper.Normalize(levelElement.GetString());
+            }
+        }
+        catch (Exception ex)
+        {
+            LogManager($"[WARN] Failed to inspect config log level: {ex.Message}");
+        }
+
+        return LogMonitorFallbackLevel;
     }
 
     private static bool IsEmptyOrJsonWhitespace(ReadOnlySpan<byte> payload)

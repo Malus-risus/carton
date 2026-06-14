@@ -68,6 +68,8 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
     private string? _windowsElevatedHelperToken;
     private int? _windowsElevatedHelperPid;
     private string? _lastStartupWaitFailureReason;
+    private const string LogMonitorFallbackLevel = "info";
+    private string _logMonitorLevel = LogMonitorFallbackLevel;
     /// <summary>Whether the current/last session had system-proxy enabled.</summary>
     private bool _systemProxyEnabled;
 
@@ -189,6 +191,8 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
             SetError(error);
             return false;
         }
+
+        _logMonitorLevel = ReadLogMonitorLevel(configPath);
 
         var startupLogSession = 0;
         try

@@ -2,15 +2,11 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:controls="using:carton.GUI.Controls"
              xmlns:vm="using:carton.ViewModels"
-             xmlns:views="using:carton.Views.Pages"
              mc:Ignorable="d" d:DesignWidth="700" d:DesignHeight="450"
              x:Class="carton.Views.Pages.LogsView"
              x:DataType="vm:LogsViewModel">
-
-  <UserControl.Resources>
-    <views:LogLevelBrushConverter x:Key="LogLevelBrushConverter"/>
-  </UserControl.Resources>
 
   <UserControl.Styles>
     <Style Selector="ListBoxItem">
@@ -19,45 +15,6 @@
       <Setter Property="BorderThickness" Value="0"/>
       <Setter Property="Padding" Value="0"/>
       <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-    </Style>
-
-    <Style Selector="Border.logRow">
-      <Setter Property="Background" Value="Transparent"/>
-      <Setter Property="MinHeight" Value="28"/>
-      <Setter Property="Padding" Value="11,0,0,0"/>
-    </Style>
-    <Style Selector="Border.logRow:pointerover">
-      <Setter Property="Background" Value="{DynamicResource CartonSettingsItemPointerOverBackgroundBrush}"/>
-    </Style>
-
-    <Style Selector="Border.logRow:selected">
-      <Setter Property="Background" Value="{DynamicResource CartonControlBackgroundBaseLowBrush}"/>
-    </Style>
-
-    <Style Selector="TextBlock.logTime">
-      <Setter Property="FontSize" Value="12"/>
-      <Setter Property="FontFamily" Value="Cascadia Code,Consolas,monospace"/>
-      <Setter Property="VerticalAlignment" Value="Center"/>
-      <Setter Property="Foreground" Value="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
-    </Style>
-
-    <Style Selector="TextBlock.logSource">
-      <Setter Property="FontSize" Value="12"/>
-      <Setter Property="VerticalAlignment" Value="Center"/>
-      <Setter Property="Foreground" Value="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
-    </Style>
-
-    <Style Selector="TextBlock.logLevel">
-      <Setter Property="FontSize" Value="11"/>
-      <Setter Property="FontWeight" Value="SemiBold"/>
-      <Setter Property="VerticalAlignment" Value="Center"/>
-    </Style>
-
-    <Style Selector="TextBlock.logMessage">
-      <Setter Property="FontSize" Value="12"/>
-      <Setter Property="VerticalAlignment" Value="Center"/>
-      <Setter Property="TextWrapping" Value="NoWrap"/>
-      <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
     </Style>
 
   </UserControl.Styles>
@@ -144,33 +101,7 @@
       </ListBox.ItemsPanel>
       <ListBox.ItemTemplate>
         <DataTemplate DataType="vm:LogEntryViewModel">
-          <Border Classes="logRow">
-            <Grid ColumnDefinitions="72,68,55,*" ColumnSpacing="0">
-              <!-- Time -->
-              <TextBlock Grid.Column="0"
-                         Classes="logTime"
-                         Text="{Binding Time}"
-                         Margin="0,0,6,0"/>
-
-              <!-- Source -->
-              <TextBlock Grid.Column="1"
-                         Classes="logSource"
-                         Text="{Binding SourceDisplayName}"
-                         Margin="0,0,6,0"/>
-
-              <!-- Level -->
-              <TextBlock Grid.Column="2"
-                         Classes="logLevel"
-                         Text="{Binding Level}"
-                         Foreground="{Binding Level, Converter={StaticResource LogLevelBrushConverter}}"
-                         Margin="0,0,6,0"/>
-
-              <!-- Message -->
-              <TextBlock Grid.Column="3"
-                         Classes="logMessage"
-                         Text="{Binding Message}"/>
-            </Grid>
-          </Border>
+          <controls:LogRowControl HorizontalAlignment="Stretch"/>
         </DataTemplate>
       </ListBox.ItemTemplate>
     </ListBox>
