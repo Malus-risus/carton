@@ -19,6 +19,7 @@ public partial class GroupsViewModel : PageViewModelBase
 {
     private const string WaitingForSingBoxResourceKey = "Groups.Status.WaitingForSingBoxStart";
     private static readonly TimeSpan CacheExpirationInterval = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan NavigationApiRefreshInterval = TimeSpan.FromSeconds(10);
     private readonly ISingBoxManager? _singBoxManager;
     private readonly IPreferencesService? _preferencesService;
     private readonly SemaphoreSlim _loadSemaphore = new(1, 1);
@@ -30,8 +31,10 @@ public partial class GroupsViewModel : PageViewModelBase
     private readonly DispatcherTimer _urlTestRefreshTimer;
     private IReadOnlyList<GroupCacheSnapshot> _cachedGroups = Array.Empty<GroupCacheSnapshot>();
     private DateTimeOffset? _lastCacheRefreshAt;
+    private DateTimeOffset? _lastNavigationApiRefreshAt;
     private string? _expandedGroupName;
     private bool _isRefreshingUrlTestGroups;
+    private bool _isRefreshingGroupsOnNavigation;
     private bool _isPageActive;
     private bool _isWindowVisible = true;
 
@@ -91,19 +94,31 @@ public partial class GroupsViewModel : PageViewModelBase
 
         if (_singBoxManager.IsRunning)
         {
-            if (_clashConfigCache.IsDirty || _cachedGroups.Count == 0 || isCacheExpired)
+            var now = DateTimeOffset.UtcNow;
+            var shouldLoadGroups = _clashConfigCache.IsDirty || _cachedGroups.Count == 0 || isCacheExpired;
+            if (shouldLoadGroups)
             {
+                _lastNavigationApiRefreshAt = now;
                 _ = LoadGroupsAsync();
             }
             else if (Groups.Count == 0)
             {
                 RestoreViewGroupsFromCache();
                 StatusMessage = CreateLoadedGroupsStatusMessage(Groups.Count);
+                RefreshGroupsFromApiOnNavigationIfDue(now);
+            }
+            else
+            {
+                RefreshGroupsFromApiOnNavigationIfDue(now);
             }
         }
-        else if (Groups.Count == 0)
+        else
         {
-            StatusMessage = LocalizationService.Instance[WaitingForSingBoxResourceKey];
+            _lastNavigationApiRefreshAt = null;
+            if (Groups.Count == 0)
+            {
+                StatusMessage = LocalizationService.Instance[WaitingForSingBoxResourceKey];
+            }
         }
     }
 
@@ -188,6 +203,7 @@ public partial class GroupsViewModel : PageViewModelBase
             {
                 _cachedGroups = BuildCachedGroupsFromOutboundGroups(filteredGroups);
                 _lastCacheRefreshAt = DateTimeOffset.UtcNow;
+                _lastNavigationApiRefreshAt = _lastCacheRefreshAt;
                 UpdateTrayGroupsFromCache();
 
                 if (!_isPageActive)
@@ -239,6 +255,7 @@ public partial class GroupsViewModel : PageViewModelBase
 
         if (status is ServiceStatus.Stopped or ServiceStatus.Error)
         {
+            _lastNavigationApiRefreshAt = null;
             Dispatcher.UIThread.Post(() =>
             {
                 ReleaseViewGroups(clearStatusMessage: false);
@@ -252,6 +269,87 @@ public partial class GroupsViewModel : PageViewModelBase
             });
             UpdateUrlTestRefreshState();
         }
+    }
+
+    private void RefreshGroupsFromApiOnNavigationIfDue(DateTimeOffset now)
+    {
+        if (_singBoxManager?.IsRunning != true || _isRefreshingGroupsOnNavigation)
+        {
+            return;
+        }
+
+        if (_lastNavigationApiRefreshAt.HasValue &&
+            now - _lastNavigationApiRefreshAt.Value < NavigationApiRefreshInterval)
+        {
+            return;
+        }
+
+        _lastNavigationApiRefreshAt = now;
+        _ = RefreshGroupsFromApiOnNavigationAsync();
+    }
+
+    private async Task RefreshGroupsFromApiOnNavigationAsync()
+    {
+        if (_singBoxManager?.IsRunning != true)
+        {
+            _lastNavigationApiRefreshAt = null;
+            return;
+        }
+
+        _isRefreshingGroupsOnNavigation = true;
+        try
+        {
+            var groupNames = await Dispatcher.UIThread.InvokeAsync(GetCachedGroupNames);
+            if (groupNames.Count == 0)
+            {
+                return;
+            }
+
+            var selections = await GetGroupSelectionSnapshotAsync(groupNames);
+            if (selections.Count == 0)
+            {
+                return;
+            }
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (ApplyGroupSelectionSnapshot(selections))
+                {
+                    UpdateTrayGroupsFromCache();
+                }
+            });
+        }
+        catch
+        {
+        }
+        finally
+        {
+            _isRefreshingGroupsOnNavigation = false;
+        }
+    }
+
+    private async Task<Dictionary<string, string>> GetGroupSelectionSnapshotAsync(IReadOnlyList<string> groupNames)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (_singBoxManager?.IsRunning != true || groupNames.Count == 0)
+        {
+            return result;
+        }
+
+        var groupNameSet = CreateTagSet(groupNames);
+        var groups = await _singBoxManager.GetOutboundGroupsAsync();
+        for (var i = 0; i < groups.Count; i++)
+        {
+            var group = groups[i];
+            if (string.IsNullOrWhiteSpace(group.Tag) || !groupNameSet.Contains(group.Tag))
+            {
+                continue;
+            }
+
+            result[group.Tag] = group.Selected;
+        }
+
+        return result;
     }
 
     private void UpdateSelectOutboundCommandStates()
@@ -1158,6 +1256,26 @@ public partial class GroupsViewModel : PageViewModelBase
         return null;
     }
 
+    private IReadOnlyList<string> GetCachedGroupNames()
+    {
+        if (_cachedGroups.Count == 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        var names = new List<string>(_cachedGroups.Count);
+        for (var i = 0; i < _cachedGroups.Count; i++)
+        {
+            var group = _cachedGroups[i];
+            if (group.Items.Count > 0 && !string.IsNullOrWhiteSpace(group.Name))
+            {
+                names.Add(group.Name);
+            }
+        }
+
+        return names;
+    }
+
     private static HashSet<string> CreateTagSet(IEnumerable<string> groupTags)
     {
         var tagSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1401,6 +1519,88 @@ public partial class GroupsViewModel : PageViewModelBase
             group.SelectedOutbound = outboundTag;
             SyncViewGroupsFromCache();
             break;
+        }
+    }
+
+    private bool ApplyGroupSelectionSnapshot(IReadOnlyDictionary<string, string> selectedOutboundByGroup)
+    {
+        if (_cachedGroups.Count == 0 || selectedOutboundByGroup.Count == 0)
+        {
+            return false;
+        }
+
+        var hasChanges = false;
+        for (var i = 0; i < _cachedGroups.Count; i++)
+        {
+            var group = _cachedGroups[i];
+            if (!selectedOutboundByGroup.TryGetValue(group.Name, out var selectedOutbound) ||
+                string.Equals(group.SelectedOutbound, selectedOutbound, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            group.SelectedOutbound = selectedOutbound;
+            UpdateCacheItemSelection(group, selectedOutbound);
+            UpdateViewGroupSelection(group.Name, selectedOutbound);
+            hasChanges = true;
+        }
+
+        if (hasChanges)
+        {
+            SyncExpandedProxyItemsFromSelectionOnly();
+        }
+
+        return hasChanges;
+    }
+
+    private static void UpdateCacheItemSelection(GroupCacheSnapshot group, string selectedOutbound)
+    {
+        for (var i = 0; i < group.Items.Count; i++)
+        {
+            var item = group.Items[i];
+            var isSelected = string.Equals(item.Tag, selectedOutbound, StringComparison.OrdinalIgnoreCase);
+            if (item.IsSelected != isSelected)
+            {
+                item.IsSelected = isSelected;
+            }
+        }
+    }
+
+    private void UpdateViewGroupSelection(string groupName, string selectedOutbound)
+    {
+        var group = FindGroupByName(groupName);
+        if (group == null)
+        {
+            return;
+        }
+
+        if (!string.Equals(group.SelectedOutbound, selectedOutbound, StringComparison.OrdinalIgnoreCase))
+        {
+            group.SelectedOutbound = selectedOutbound;
+        }
+    }
+
+    private void SyncExpandedProxyItemsFromSelectionOnly()
+    {
+        if (string.IsNullOrWhiteSpace(_expandedGroupName) || _expandedProxyItems.Count == 0)
+        {
+            return;
+        }
+
+        var cachedGroup = FindCachedGroup(_expandedGroupName);
+        if (cachedGroup == null)
+        {
+            return;
+        }
+
+        for (var i = 0; i < _expandedProxyItems.Count; i++)
+        {
+            var item = _expandedProxyItems[i];
+            var isSelected = string.Equals(item.Tag, cachedGroup.SelectedOutbound, StringComparison.OrdinalIgnoreCase);
+            if (item.IsSelected != isSelected)
+            {
+                item.IsSelected = isSelected;
+            }
         }
     }
 

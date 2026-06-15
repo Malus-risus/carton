@@ -5,6 +5,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:carton.ViewModels"
              xmlns:helpers="using:carton.GUI.Helpers"
+             xmlns:controls="using:carton.GUI.Controls"
              mc:Ignorable="d"
              d:DesignWidth="800"
              d:DesignHeight="600"
@@ -258,107 +259,9 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                           <DataTemplate DataType="vm:OutboundItemViewModel">
-                            <Border x:Name="ProxyItemBorder"
-                                    Width="{Binding ElementName=ExpandedProxiesList, Path=Bounds.Width, Converter={StaticResource ResponsiveItemWidthConverter}, ConverterParameter=16}"
-                                    Margin="0,5,0,5"
-                                    Padding="0"
-                                    CornerRadius="12"
-                                    HorizontalAlignment="Stretch"
-                                    Classes.selected="{Binding IsSelected}"
-                                    ToolTip.ShowDelay="1500"
-                                    ToolTip.BetweenShowDelay="-1"
-                                    ToolTip.Placement="Right"
-                                    ToolTip.HorizontalOffset="12">
-                              <ToolTip.Tip>
-                                <ToolTip IsHitTestVisible="False">
-                                  <TextBlock Text="{Binding Tag}"
-                                             MaxWidth="280"
-                                             TextWrapping="Wrap"
-                                             IsHitTestVisible="False"/>
-                                </ToolTip>
-                              </ToolTip.Tip>
-                              <Border.Styles>
-                                <Style Selector="Border">
-                                  <Setter Property="Background" Value="{DynamicResource CartonControlBackgroundAltMediumHighBrush}"/>
-                                  <Setter Property="BorderBrush" Value="Transparent"/>
-                                  <Setter Property="BorderThickness" Value="1"/>
-                                </Style>
-                                <Style Selector="Border.hovered:not(.selected)">
-                                  <Setter Property="Background" Value="{DynamicResource CartonControlBackgroundBaseLowBrush}"/>
-                                </Style>
-                                <Style Selector="Border.selected">
-                                  <Setter Property="Background" Value="{DynamicResource CartonControlBackgroundChromeHighBrush}"/>
-                                  <Setter Property="BorderBrush" Value="{DynamicResource CartonAccentBorderBrush}"/>
-                                  <Setter Property="BorderThickness" Value="1"/>
-                                </Style>
-                              </Border.Styles>
-
-                              <Grid>
-                                <Border x:Name="ProxySelectSurface"
-                                        Background="Transparent"
-                                        CornerRadius="12"
-                                        PointerEntered="OnProxySelectSurfacePointerEntered"
-                                        PointerExited="OnProxySelectSurfacePointerExited"
-                                        PointerPressed="OnProxySelectPressed">
-                                </Border>
-
-                                <Border Background="{DynamicResource CartonAccentBrush}"
-                                        CornerRadius="12"
-                                        Opacity="0.12"
-                                        IsHitTestVisible="False"
-                                        IsVisible="{Binding IsSelected}"/>
-
-                                <StackPanel Margin="14,12"
-                                            Spacing="10"
-                                            IsHitTestVisible="False">
-                                  <TextBlock helpers:EmojiTextHelper.Text="{Binding Tag}"
-                                             FontSize="13"
-                                             FontWeight="SemiBold"
-                                             MaxLines="1"
-                                             TextTrimming="CharacterEllipsis"/>
-                                  <TextBlock Text="{Binding Type}"
-                                              FontSize="10"
-                                              Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
-                                </StackPanel>
-
-                                <Border Margin="0,0,14,8"
-                                        HorizontalAlignment="Right"
-                                        VerticalAlignment="Bottom"
-                                        Padding="8,4"
-                                        CornerRadius="8"
-                                        PointerPressed="OnProxyTestDelayPressed"
-                                        Cursor="Hand">
-                                  <Border.Styles>
-                                    <Style Selector="Border">
-                                      <Setter Property="Background" Value="Transparent"/>
-                                    </Style>
-                                    <Style Selector="Border:pointerover">
-                                      <Setter Property="Background" Value="{DynamicResource CartonControlBackgroundBaseLowBrush}"/>
-                                    </Style>
-                                  </Border.Styles>
-                                  <Grid MinWidth="28"
-                                        Height="16"
-                                        VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding DelayDisplay}"
-                                               IsVisible="{Binding ShowDelayText}"
-                                               VerticalAlignment="Center"
-                                               HorizontalAlignment="Center"
-                                               FontSize="11"
-                                               FontWeight="SemiBold"
-                                               Foreground="{Binding Delay, Converter={StaticResource LatencyForegroundConverter}}"/>
-                                    <Path Width="12"
-                                          Height="12"
-                                          IsVisible="{Binding ShowDelayIcon}"
-                                          VerticalAlignment="Center"
-                                          HorizontalAlignment="Center"
-                                          Margin="1,0,0,0"
-                                          Stretch="Uniform"
-                                          Fill="{DynamicResource CartonControlForegroundBaseMediumBrush}"
-                                          Data="M13 2L5 13H11L10 22L18 11H12L13 2Z"/>
-                                  </Grid>
-                                </Border>
-                              </Grid>
-                            </Border>
+                            <controls:ProxyItemControl Width="{Binding ElementName=ExpandedProxiesList, Path=Bounds.Width, Converter={StaticResource ResponsiveItemWidthConverter}, ConverterParameter=16}"
+                                                       Margin="0,5,0,5"
+                                                       HorizontalAlignment="Stretch"/>
                           </DataTemplate>
                         </ItemsControl.ItemTemplate>
                       </ItemsControl>
