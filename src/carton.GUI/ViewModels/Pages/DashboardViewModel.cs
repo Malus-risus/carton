@@ -1551,9 +1551,9 @@ public partial class DashboardViewModel : PageViewModelBase
                 tunInbound["auto_route"] = true;
                 tunInbound["strict_route"] = true;
                 tunInbound["route_exclude_address"] = new JsonArray(
-                    "10.0.0.0/8",
-                    "192.168.0.0/16",
-                    "fe80::/10");
+                    (JsonNode)"10.0.0.0/8",
+                    (JsonNode)"192.168.0.0/16",
+                    (JsonNode)"fe80::/10");
             }
             else
             {
@@ -1654,14 +1654,12 @@ public partial class DashboardViewModel : PageViewModelBase
                     LogWarning,
                     clashApiPort,
                     nativeApiPort);
-                apiService["access_control_allow_origin"] = new JsonArray
-                {
-                    "http://sing-box-dashboard.sagernet.org",
-                    "https://sing-box-dashboard.sagernet.org",
-                    "http://dash.sing-box.app",
-                    "https://dash.sing-box.app",
-                    dashboardBootstrap.Origin
-                };
+                apiService["access_control_allow_origin"] = new JsonArray(
+                    (JsonNode)"http://sing-box-dashboard.sagernet.org",
+                    (JsonNode)"https://sing-box-dashboard.sagernet.org",
+                    (JsonNode)"http://dash.sing-box.app",
+                    (JsonNode)"https://dash.sing-box.app",
+                    (JsonNode)dashboardBootstrap.Origin);
                 apiService["access_control_allow_private_network"] = true;
 
                 if (!hasConfiguredClashApiPort)
@@ -2276,7 +2274,7 @@ public partial class DashboardViewModel : PageViewModelBase
             ["type"] = "api",
             ["tag"] = "carton-api"
         };
-        services.Add(apiService);
+        services.Add((JsonNode)apiService);
         return apiService;
     }
 

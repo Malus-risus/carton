@@ -1726,6 +1726,12 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
     }
 
     [RelayCommand]
+    private void OpenTelegramGroup()
+    {
+        OpenHomepage("https://t.me/+fwutL7igOTk3ZmFl");
+    }
+
+    [RelayCommand]
     private void OpenSingBoxHomepage()
     {
         OpenHomepage("https://github.com/SagerNet/sing-box");
