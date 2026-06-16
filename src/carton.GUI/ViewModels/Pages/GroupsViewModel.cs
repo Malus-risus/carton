@@ -313,10 +313,7 @@ public partial class GroupsViewModel : PageViewModelBase
 
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                if (ApplyGroupSelectionSnapshot(selections))
-                {
-                    UpdateTrayGroupsFromCache();
-                }
+                ApplyGroupSelectionSnapshot(selections);
             });
         }
         catch
@@ -789,6 +786,12 @@ public partial class GroupsViewModel : PageViewModelBase
                     groupItemsChanged = true;
                 }
 
+                if (updatedItem.UrlTestDelay > 0 && existingItem.IsDelayTimeout)
+                {
+                    existingItem.IsDelayTimeout = false;
+                    groupItemsChanged = true;
+                }
+
                 var isSelected = string.Equals(updatedItem.Tag, updatedGroup.Selected, StringComparison.OrdinalIgnoreCase);
                 if (existingItem.IsSelected != isSelected)
                 {
@@ -866,8 +869,8 @@ public partial class GroupsViewModel : PageViewModelBase
         try
         {
             var delays = await _singBoxManager.RunOutboundDelayTestsAsync(new[] { item.Tag });
-            var delay = delays.TryGetValue(item.Tag, out var value) && value >= 0 ? value : 0;
-            UpdateCachedRawDelay(item.Tag, delay);
+            var delay = delays.TryGetValue(item.Tag, out var value) && value > 0 ? value : 0;
+            UpdateCachedRawDelay(item.Tag, delay, delay <= 0);
             RecalculateEffectiveDelays();
             var resolvedDelay = GetCachedEffectiveDelay(item.Tag);
             StatusMessage = resolvedDelay > 0
@@ -1176,7 +1179,7 @@ public partial class GroupsViewModel : PageViewModelBase
                 foreach (var item in targets)
                 {
                     var delay = delays.TryGetValue(item.Tag, out var value) && value > 0 ? value : 0;
-                    UpdateCachedRawDelay(item.Tag, delay);
+                    UpdateCachedRawDelay(item.Tag, delay, delay <= 0);
                 }
 
                 RecalculateEffectiveDelays();
@@ -1548,6 +1551,8 @@ public partial class GroupsViewModel : PageViewModelBase
         if (hasChanges)
         {
             SyncExpandedProxyItemsFromSelectionOnly();
+            RecalculateEffectiveDelays();
+            UpdateTrayGroupsFromCache();
         }
 
         return hasChanges;
@@ -1769,6 +1774,7 @@ public partial class GroupsViewModel : PageViewModelBase
                 Type = item.Type,
                 Delay = item.Delay,
                 RawDelay = item.RawDelay,
+                IsDelayTimeout = item.IsDelayTimeout,
                 IsSelected = item.IsSelected
             });
         }
@@ -1821,11 +1827,11 @@ public partial class GroupsViewModel : PageViewModelBase
         }
 
         var delays = await _singBoxManager.RunOutboundDelayTestsAsync(new[] { item.Tag });
-        var delay = delays.TryGetValue(item.Tag, out var value) && value >= 0 ? value : 0;
+        var delay = delays.TryGetValue(item.Tag, out var value) && value > 0 ? value : 0;
 
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            UpdateCachedRawDelay(item.Tag, delay);
+            UpdateCachedRawDelay(item.Tag, delay, delay <= 0);
             RecalculateEffectiveDelays();
             SetOutboundTestingState(item.Tag, false);
 
@@ -1981,6 +1987,11 @@ public partial class GroupsViewModel : PageViewModelBase
             viewModel.RawDelay = item.RawDelay;
         }
 
+        if (viewModel.IsDelayTimeout != item.IsDelayTimeout)
+        {
+            viewModel.IsDelayTimeout = item.IsDelayTimeout;
+        }
+
         if (viewModel.IsSelected != item.IsSelected)
         {
             viewModel.IsSelected = item.IsSelected;
@@ -2004,7 +2015,7 @@ public partial class GroupsViewModel : PageViewModelBase
         }
     }
 
-    private void UpdateCachedRawDelay(string tag, int delay)
+    private void UpdateCachedRawDelay(string tag, int delay, bool isTimeout = false)
     {
         if (_cachedGroups.Count == 0 || string.IsNullOrWhiteSpace(tag))
         {
@@ -2023,7 +2034,22 @@ public partial class GroupsViewModel : PageViewModelBase
                     {
                         item.RawDelay = delay;
                     }
+
+                    if (item.IsDelayTimeout != isTimeout)
+                    {
+                        item.IsDelayTimeout = isTimeout;
+                    }
                 }
+            }
+        }
+
+        for (var i = 0; i < _expandedProxyItems.Count; i++)
+        {
+            var item = _expandedProxyItems[i];
+            if (string.Equals(item.Tag, tag, StringComparison.OrdinalIgnoreCase) &&
+                item.IsDelayTimeout != isTimeout)
+            {
+                item.IsDelayTimeout = isTimeout;
             }
         }
     }
@@ -2256,9 +2282,12 @@ public partial class OutboundItemViewModel : ObservableObject
     [ObservableProperty]
     private bool _isTesting;
 
-    public string DelayDisplay => IsTesting ? "..." : Delay > 0 ? $"{Delay}ms" : string.Empty;
-    public bool ShowDelayText => IsTesting || Delay > 0;
-    public bool ShowDelayIcon => !IsTesting && Delay <= 0;
+    [ObservableProperty]
+    private bool _isDelayTimeout;
+
+    public string DelayDisplay => IsTesting ? "..." : IsDelayTimeout ? "Timeout" : Delay > 0 ? $"{Delay}ms" : string.Empty;
+    public bool ShowDelayText => IsTesting || IsDelayTimeout || Delay > 0;
+    public bool ShowDelayIcon => !IsTesting && !IsDelayTimeout && Delay <= 0;
 
     partial void OnDelayChanged(int value)
     {
@@ -2268,6 +2297,13 @@ public partial class OutboundItemViewModel : ObservableObject
     }
 
     partial void OnIsTestingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(DelayDisplay));
+        OnPropertyChanged(nameof(ShowDelayText));
+        OnPropertyChanged(nameof(ShowDelayIcon));
+    }
+
+    partial void OnIsDelayTimeoutChanged(bool value)
     {
         OnPropertyChanged(nameof(DelayDisplay));
         OnPropertyChanged(nameof(ShowDelayText));
@@ -2285,13 +2321,14 @@ public sealed record GroupMenuSnapshot(
 
 public sealed partial class OutboundCacheSnapshot : ObservableObject
 {
-    public OutboundCacheSnapshot(string tag, string type, int delay, int rawDelay, bool isSelected)
+    public OutboundCacheSnapshot(string tag, string type, int delay, int rawDelay, bool isSelected, bool isDelayTimeout = false)
     {
         _tag = tag;
         _type = type;
         _delay = delay;
         _rawDelay = rawDelay;
         _isSelected = isSelected;
+        _isDelayTimeout = isDelayTimeout;
     }
 
     [ObservableProperty]
@@ -2308,6 +2345,9 @@ public sealed partial class OutboundCacheSnapshot : ObservableObject
 
     [ObservableProperty]
     private bool _isSelected;
+
+    [ObservableProperty]
+    private bool _isDelayTimeout;
 }
 
 public sealed class GroupCacheSnapshot

@@ -18,7 +18,8 @@ public sealed class ProxyItemControl : Control
     private const double HorizontalPadding = 14;
     private const double TopPadding = 12;
     private const double TypeTopGap = 10;
-    private const double TestButtonWidth = 44;
+    private const double TestButtonIconWidth = 44;
+    private const double TestButtonTextWidth = 64;
     private const double TestButtonHeight = 24;
     private const double TestButtonRight = 14;
     private const double TestButtonBottom = 8;
@@ -39,6 +40,7 @@ public sealed class ProxyItemControl : Control
     private static readonly SolidColorBrush LowLatencyBrush = new(Color.Parse("#16A34A"));
     private static readonly SolidColorBrush MediumLatencyBrush = new(Color.Parse("#CA8A04"));
     private static readonly SolidColorBrush HighLatencyBrush = new(Color.Parse("#DC2626"));
+    private static readonly SolidColorBrush TimeoutLatencyBrush = new(Color.Parse("#DB2777"));
     private static readonly SolidColorBrush EmptyLatencyBrush = new(Colors.Gray);
     private static readonly Pen TransparentBorderPen = new(Brushes.Transparent, 1);
 
@@ -127,7 +129,7 @@ public sealed class ProxyItemControl : Control
             return;
         }
 
-        if (GetTestButtonRect().Contains(e.GetPosition(this)))
+        if (GetTestButtonRect(_item).Contains(e.GetPosition(this)))
         {
             ExecuteTestDelay();
         }
@@ -194,7 +196,7 @@ public sealed class ProxyItemControl : Control
 
     private void DrawDelayButton(DrawingContext context, OutboundItemViewModel item)
     {
-        var rect = GetTestButtonRect();
+        var rect = GetTestButtonRect(item);
         if (_isTestButtonHot)
         {
             context.DrawRectangle(GetBrush("CartonControlBackgroundBaseLowBrush", Brushes.Transparent), null, rect, 8, 8);
@@ -204,6 +206,8 @@ public sealed class ProxyItemControl : Control
         {
             var delayBrush = item.IsTesting
                 ? GetBrush("CartonControlForegroundBaseMediumBrush", Brushes.Gray)
+                : item.IsDelayTimeout
+                    ? TimeoutLatencyBrush
                 : ResolveLatencyBrush(item.Delay);
             var layout = _delayText.Get(item.DelayDisplay, DelayTypeface, 11, delayBrush, Math.Max(0, rect.Width - 10));
             var point = new Point(
@@ -270,7 +274,7 @@ public sealed class ProxyItemControl : Control
             ClearTextSlots();
             ClearToolTip();
         }
-        else if (e.PropertyName is nameof(OutboundItemViewModel.Delay) or nameof(OutboundItemViewModel.IsTesting))
+        else if (e.PropertyName is nameof(OutboundItemViewModel.Delay) or nameof(OutboundItemViewModel.IsTesting) or nameof(OutboundItemViewModel.IsDelayTimeout))
         {
             _delayText.Clear();
         }
@@ -303,7 +307,7 @@ public sealed class ProxyItemControl : Control
 
     private void UpdateTestButtonHot(Point point)
     {
-        var isHot = GetTestButtonRect().Contains(point);
+        var isHot = GetTestButtonRect(_item).Contains(point);
         if (_isTestButtonHot == isHot)
         {
             return;
@@ -313,13 +317,14 @@ public sealed class ProxyItemControl : Control
         InvalidateVisual();
     }
 
-    private Rect GetTestButtonRect()
+    private Rect GetTestButtonRect(OutboundItemViewModel? item)
     {
         var height = Math.Max(CardHeight, Bounds.Height);
+        var width = item?.ShowDelayText == true ? TestButtonTextWidth : TestButtonIconWidth;
         return new Rect(
-            Math.Max(0, Bounds.Width - TestButtonRight - TestButtonWidth),
+            Math.Max(0, Bounds.Width - TestButtonRight - width),
             Math.Max(0, height - TestButtonBottom - TestButtonHeight),
-            TestButtonWidth,
+            width,
             TestButtonHeight);
     }
 
