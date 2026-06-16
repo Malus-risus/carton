@@ -8,6 +8,7 @@ using CommunityToolkit.Mvvm.Input;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -316,8 +317,9 @@ public partial class GroupsViewModel : PageViewModelBase
                 ApplyGroupSelectionSnapshot(selections);
             });
         }
-        catch
+        catch (Exception ex)
         {
+            Debug.WriteLine($"Failed to refresh groups on navigation: {ex}");
         }
         finally
         {

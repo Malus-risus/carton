@@ -43,12 +43,14 @@ public sealed class ProxyItemControl : Control
     private static readonly SolidColorBrush TimeoutLatencyBrush = new(Color.Parse("#DB2777"));
     private static readonly SolidColorBrush EmptyLatencyBrush = new(Colors.Gray);
     private static readonly Pen TransparentBorderPen = new(Brushes.Transparent, 1);
+    private static readonly Cursor HandCursor = new(StandardCursorType.Hand);
 
     private readonly EmojiTextSlot _titleText = new();
     private readonly TextSlot _typeText = new();
     private readonly TextSlot _delayText = new();
     private OutboundItemViewModel? _item;
     private SolidColorBrush? _selectedOverlayBrush;
+    private Pen? _selectedBorderPen;
     private Color? _selectedOverlayColor;
     private bool _isPointerOver;
     private bool _isTestButtonHot;
@@ -59,7 +61,7 @@ public sealed class ProxyItemControl : Control
         MinHeight = CardHeight;
         ClipToBounds = true;
         Focusable = false;
-        Cursor = new Cursor(StandardCursorType.Hand);
+        Cursor = HandCursor;
         ToolTip.SetShowDelay(this, 1500);
         ToolTip.SetBetweenShowDelay(this, -1);
         ToolTip.SetPlacement(this, PlacementMode.Right);
@@ -168,7 +170,7 @@ public sealed class ProxyItemControl : Control
                 CornerRadius);
             context.DrawRectangle(
                 null,
-                new Pen(GetBrush("CartonAccentBorderBrush", GetBrush("CartonAccentBrush", EmptyLatencyBrush)), BorderThickness),
+                GetSelectedBorderPen(),
                 borderRect,
                 CornerRadius,
                 CornerRadius);
@@ -432,6 +434,18 @@ public sealed class ProxyItemControl : Control
         return _selectedOverlayBrush;
     }
 
+    private Pen GetSelectedBorderPen()
+    {
+        if (_selectedBorderPen != null)
+        {
+            return _selectedBorderPen;
+        }
+
+        var brush = GetBrush("CartonAccentBorderBrush", GetBrush("CartonAccentBrush", EmptyLatencyBrush));
+        _selectedBorderPen = new Pen(brush, BorderThickness);
+        return _selectedBorderPen;
+    }
+
     private static double EstimateToolTipWidth(string text)
     {
         var estimatedWidth = text.Length * ToolTipAverageCharWidth + ToolTipHorizontalPadding;
@@ -441,6 +455,7 @@ public sealed class ProxyItemControl : Control
     private void OnActualThemeVariantChanged(object? sender, EventArgs e)
     {
         _selectedOverlayBrush = null;
+        _selectedBorderPen = null;
         _selectedOverlayColor = null;
         ClearTextSlots();
         InvalidateVisual();
