@@ -42,11 +42,13 @@ public class ConnectionInfo
     public string Id { get; set; } = string.Empty;
     public DateTime StartTime { get; set; }
     public string Inbound { get; set; } = string.Empty;
+    public string InboundType { get; set; } = string.Empty;
     public string Process { get; set; } = string.Empty;
     public string Ip { get; set; } = string.Empty;
     public string Source { get; set; } = string.Empty;
     public string Destination { get; set; } = string.Empty;
     public string Domain { get; set; } = string.Empty;
+    public string Network { get; set; } = string.Empty;
     public string Protocol { get; set; } = string.Empty;
     public string Outbound { get; set; } = string.Empty;
     public List<string> Chains { get; set; } = new();

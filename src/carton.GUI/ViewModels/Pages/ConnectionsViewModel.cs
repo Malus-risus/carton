@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Threading;
@@ -34,6 +35,9 @@ public partial class ConnectionsViewModel : PageViewModelBase, IDisposable
 
     [ObservableProperty]
     private int _visibleConnectionCount;
+
+    [ObservableProperty]
+    private ConnectionItemViewModel? _selectedConnection;
 
     private readonly DispatcherTimer? _refreshTimer;
     private bool _isRefreshing;
@@ -117,6 +121,7 @@ public partial class ConnectionsViewModel : PageViewModelBase, IDisposable
                 {
                     _allConnections.Clear();
                     Connections.Clear();
+                    SelectedConnection = null;
                     ConnectionCount = 0;
                     VisibleConnectionCount = 0;
                 });
@@ -144,7 +149,14 @@ public partial class ConnectionsViewModel : PageViewModelBase, IDisposable
     {
         if (_singBoxManager == null || connection == null) return;
         await _singBoxManager.CloseConnectionAsync(connection.Id);
+        connection.MarkClosed();
         await RefreshAsync();
+    }
+
+    [RelayCommand]
+    private void ClearSelectedConnection()
+    {
+        SelectedConnection = null;
     }
 
     private async Task RefreshAsync()
@@ -161,7 +173,6 @@ public partial class ConnectionsViewModel : PageViewModelBase, IDisposable
                 var process = FormatText(conn.Process, conn.Inbound);
                 var source = FormatText(conn.Source, conn.Ip);
                 var destination = FormatText(conn.Destination, conn.Domain);
-                var protocol = FormatText(conn.Protocol);
                 var outbound = FormatText(conn.Outbound);
 
                 snapshots.Add(new ConnectionSnapshot(
@@ -169,16 +180,22 @@ public partial class ConnectionsViewModel : PageViewModelBase, IDisposable
                     process,
                     source,
                     destination,
-                    protocol,
+                    conn.Network,
+                    conn.Protocol,
                     outbound,
                     FormatBytes(conn.Upload),
                     FormatBytes(conn.Download),
+                    string.Empty,
+                    string.Empty,
+                    conn.StartTime,
                     conn.Inbound,
+                    conn.InboundType,
                     conn.Process,
                     conn.Ip,
                     conn.Source,
                     conn.Domain,
-                    conn.Destination));
+                    conn.Destination,
+                    conn.Chains));
             }
 
             await Dispatcher.UIThread.InvokeAsync(() =>
@@ -255,9 +272,16 @@ public partial class ConnectionsViewModel : PageViewModelBase, IDisposable
 
         var searchText = SearchText.Trim();
         var writeIndex = 0;
+        var selectedConnection = SelectedConnection;
+        var selectedConnectionExistsInSnapshots = false;
         for (var i = 0; i < _allConnections.Count; i++)
         {
             var snapshot = _allConnections[i];
+            if (selectedConnection != null && string.Equals(snapshot.Id, selectedConnection.Id, StringComparison.Ordinal))
+            {
+                selectedConnectionExistsInSnapshots = true;
+            }
+
             if (!MatchesSearch(snapshot, searchText))
             {
                 continue;
@@ -288,6 +312,10 @@ public partial class ConnectionsViewModel : PageViewModelBase, IDisposable
             }
 
             writeIndex++;
+            if (ReferenceEquals(selectedConnection, connection))
+            {
+                selectedConnectionExistsInSnapshots = true;
+            }
         }
 
         for (var i = Connections.Count - 1; i >= writeIndex; i--)
@@ -295,7 +323,25 @@ public partial class ConnectionsViewModel : PageViewModelBase, IDisposable
             Connections.RemoveAt(i);
         }
 
+        if (selectedConnection != null && !selectedConnectionExistsInSnapshots)
+        {
+            selectedConnection.MarkClosed();
+        }
+
         VisibleConnectionCount = writeIndex;
+    }
+
+    partial void OnSelectedConnectionChanged(ConnectionItemViewModel? oldValue, ConnectionItemViewModel? newValue)
+    {
+        if (oldValue != null)
+        {
+            oldValue.IsSelected = false;
+        }
+
+        if (newValue != null)
+        {
+            newValue.IsSelected = true;
+        }
     }
 
     private static bool MatchesSearch(ConnectionSnapshot connection, string searchText)
@@ -304,9 +350,11 @@ public partial class ConnectionsViewModel : PageViewModelBase, IDisposable
                connection.Process.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
                connection.Source.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
                connection.Destination.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+               connection.Network.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
                connection.Protocol.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
                connection.Outbound.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
                connection.Inbound.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+               connection.InboundType.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
                connection.RawProcess.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
                connection.Ip.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
                connection.RawSource.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
@@ -351,6 +399,7 @@ public partial class ConnectionsViewModel : PageViewModelBase, IDisposable
         _activeConnectionIds.Clear();
         _staleConnectionIds.Clear();
         Connections.Clear();
+        SelectedConnection = null;
         VisibleConnectionCount = 0;
     }
 }
@@ -370,10 +419,101 @@ public partial class ConnectionItemViewModel : ObservableObject
         Process = snapshot.Process;
         Source = snapshot.Source;
         Destination = snapshot.Destination;
+        Network = snapshot.Network;
+        NetworkDisplay = FormatNetworkDisplay(snapshot.Network);
         Protocol = snapshot.Protocol;
         Outbound = snapshot.Outbound;
         Upload = snapshot.Upload;
         Download = snapshot.Download;
+        UploadRate = snapshot.UploadRate;
+        DownloadRate = snapshot.DownloadRate;
+        UploadTotal = snapshot.Upload;
+        DownloadTotal = snapshot.Download;
+        Inbound = FormatInbound(snapshot.InboundType, snapshot.Inbound);
+        RawProcess = FormatText(snapshot.RawProcess);
+        Ip = FormatText(snapshot.Ip);
+        RawSource = FormatText(snapshot.RawSource);
+        Domain = FormatText(snapshot.Domain);
+        RawDestination = FormatText(snapshot.RawDestination);
+        StartedAt = snapshot.StartTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture);
+        Chain = FormatChain(snapshot.Chains, Outbound);
+        Route = FormatActiveRoute(snapshot.Chains, Outbound);
+        InboundSummary = Inbound;
+        Status = "Active";
+        MatchRule = string.Empty;
+        OutboundType = string.Empty;
+        ProcessDisplay = string.IsNullOrWhiteSpace(snapshot.RawProcess) ? string.Empty : snapshot.RawProcess;
+        IsClosed = false;
+    }
+
+    internal void MarkClosed()
+    {
+        Status = "Closed";
+        IsClosed = true;
+    }
+
+    private static string FormatText(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "-" : value;
+
+    private static string FormatOptional(string? value)
+        => string.IsNullOrWhiteSpace(value) ? string.Empty : value;
+
+    private static string FormatInbound(string? type, string? tag)
+    {
+        var normalizedType = FormatOptional(type);
+        var normalizedTag = FormatOptional(tag);
+        if (normalizedType.Length > 0 && normalizedTag.Length > 0)
+        {
+            return string.Concat(normalizedType, "/", normalizedTag);
+        }
+
+        return FormatText(normalizedTag.Length > 0 ? normalizedTag : normalizedType);
+    }
+
+    private static string FormatNetworkDisplay(string value)
+    {
+        if (value.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var hasLower = false;
+        for (var i = 0; i < value.Length; i++)
+        {
+            if (char.IsLower(value[i]))
+            {
+                hasLower = true;
+                break;
+            }
+        }
+
+        return hasLower ? value.ToUpperInvariant() : value;
+    }
+
+    private static string FormatActiveRoute(IReadOnlyList<string> chains, string fallback)
+    {
+        if (chains.Count > 0)
+        {
+            return FormatText(chains[^1]);
+        }
+
+        return FormatText(fallback);
+    }
+
+    private static string FormatChain(IReadOnlyList<string> chains, string fallback)
+    {
+        if (chains.Count == 0)
+        {
+            return FormatText(fallback);
+        }
+
+        var values = new string[chains.Count];
+        for (var i = 0; i < chains.Count; i++)
+        {
+            values[i] = chains[chains.Count - 1 - i];
+        }
+
+        return string.Join(" / ", values);
     }
 
     [ObservableProperty]
@@ -399,6 +539,78 @@ public partial class ConnectionItemViewModel : ObservableObject
 
     [ObservableProperty]
     private string _download = string.Empty;
+
+    [ObservableProperty]
+    private string _uploadRate = string.Empty;
+
+    [ObservableProperty]
+    private string _downloadRate = string.Empty;
+
+    [ObservableProperty]
+    private string _uploadTotal = string.Empty;
+
+    [ObservableProperty]
+    private string _downloadTotal = string.Empty;
+
+    [ObservableProperty]
+    private string _inbound = string.Empty;
+
+    [ObservableProperty]
+    private string _rawProcess = string.Empty;
+
+    [ObservableProperty]
+    private string _ip = string.Empty;
+
+    [ObservableProperty]
+    private string _rawSource = string.Empty;
+
+    [ObservableProperty]
+    private string _domain = string.Empty;
+
+    [ObservableProperty]
+    private string _rawDestination = string.Empty;
+
+    [ObservableProperty]
+    private string _startedAt = string.Empty;
+
+    [ObservableProperty]
+    private string _duration = string.Empty;
+
+    [ObservableProperty]
+    private string _chain = string.Empty;
+
+    [ObservableProperty]
+    private string _route = string.Empty;
+
+    [ObservableProperty]
+    private string _inboundSummary = string.Empty;
+
+    [ObservableProperty]
+    private string _status = string.Empty;
+
+    [ObservableProperty]
+    private string _totalTraffic = string.Empty;
+
+    [ObservableProperty]
+    private string _network = string.Empty;
+
+    [ObservableProperty]
+    private string _networkDisplay = string.Empty;
+
+    [ObservableProperty]
+    private string _matchRule = string.Empty;
+
+    [ObservableProperty]
+    private string _outboundType = string.Empty;
+
+    [ObservableProperty]
+    private string _processDisplay = string.Empty;
+
+    [ObservableProperty]
+    private bool _isSelected;
+
+    [ObservableProperty]
+    private bool _isClosed;
 }
 
 internal sealed class ConnectionSnapshot
@@ -408,31 +620,43 @@ internal sealed class ConnectionSnapshot
         string process,
         string source,
         string destination,
+        string network,
         string protocol,
         string outbound,
         string upload,
         string download,
+        string uploadRate,
+        string downloadRate,
+        DateTime startTime,
         string inbound,
+        string inboundType,
         string rawProcess,
         string ip,
         string rawSource,
         string domain,
-        string rawDestination)
+        string rawDestination,
+        IReadOnlyList<string> chains)
     {
         Id = id;
         Process = process;
         Source = source;
         Destination = destination;
+        Network = network;
         Protocol = protocol;
         Outbound = outbound;
         Upload = upload;
         Download = download;
+        UploadRate = uploadRate;
+        DownloadRate = downloadRate;
+        StartTime = startTime;
         Inbound = inbound;
+        InboundType = inboundType;
         RawProcess = rawProcess;
         Ip = ip;
         RawSource = rawSource;
         Domain = domain;
         RawDestination = rawDestination;
+        Chains = chains;
     }
 
     public string Id { get; }
@@ -443,6 +667,8 @@ internal sealed class ConnectionSnapshot
 
     public string Destination { get; }
 
+    public string Network { get; }
+
     public string Protocol { get; }
 
     public string Outbound { get; }
@@ -451,7 +677,15 @@ internal sealed class ConnectionSnapshot
 
     public string Download { get; }
 
+    public string UploadRate { get; }
+
+    public string DownloadRate { get; }
+
+    public DateTime StartTime { get; }
+
     public string Inbound { get; }
+
+    public string InboundType { get; }
 
     public string RawProcess { get; }
 
@@ -462,4 +696,6 @@ internal sealed class ConnectionSnapshot
     public string Domain { get; }
 
     public string RawDestination { get; }
+
+    public IReadOnlyList<string> Chains { get; }
 }

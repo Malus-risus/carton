@@ -325,17 +325,21 @@ internal sealed class ClashHttpApiClient : ISingBoxApiClient
                 var destinationIp = hasMetadata ? ReadString(metadata, "destinationIP") : string.Empty;
                 var destinationPort = hasMetadata ? ReadString(metadata, "destinationPort") : string.Empty;
                 var host = hasMetadata ? ReadString(metadata, "host") : string.Empty;
+                var network = hasMetadata ? ReadString(metadata, "network") : string.Empty;
+                var inboundType = hasMetadata ? ReadString(metadata, "type") : string.Empty;
 
                 connections.Add(new ConnectionInfo
                 {
                     Id = ReadString(conn, "id"),
                     StartTime = ReadDateTime(conn, "start"),
                     Inbound = ReadString(conn, "inbound"),
+                    InboundType = inboundType,
                     Process = hasMetadata ? ReadString(metadata, "process") : string.Empty,
                     Ip = sourceIp,
                     Source = ComposeEndpoint(sourceIp, sourcePort),
                     Destination = ComposeDestination(host, destinationIp, destinationPort),
                     Domain = host,
+                    Network = network,
                     Protocol = ResolveProtocol(conn, metadata),
                     Chains = ReadChains(chains),
                     Outbound = ResolveOutbound(conn, chains),
@@ -923,10 +927,7 @@ internal sealed class ClashHttpApiClient : ISingBoxApiClient
     }
 
     private static string ResolveProtocol(JsonElement connection, JsonElement metadata)
-    {
-        var protocol = ReadString(connection, "protocol");
-        return string.IsNullOrWhiteSpace(protocol) ? ReadString(metadata, "network") : protocol;
-    }
+        => ReadString(connection, "protocol");
 
     private static string ResolveOutbound(JsonElement connection, JsonElement chains)
     {
