@@ -185,8 +185,6 @@ public partial class ConnectionsViewModel : PageViewModelBase, IDisposable
                     outbound,
                     FormatBytes(conn.Upload),
                     FormatBytes(conn.Download),
-                    string.Empty,
-                    string.Empty,
                     conn.StartTime,
                     conn.Inbound,
                     conn.InboundType,
@@ -425,8 +423,6 @@ public partial class ConnectionItemViewModel : ObservableObject
         Outbound = snapshot.Outbound;
         Upload = snapshot.Upload;
         Download = snapshot.Download;
-        UploadRate = snapshot.UploadRate;
-        DownloadRate = snapshot.DownloadRate;
         UploadTotal = snapshot.Upload;
         DownloadTotal = snapshot.Download;
         Inbound = FormatInbound(snapshot.InboundType, snapshot.Inbound);
@@ -440,8 +436,6 @@ public partial class ConnectionItemViewModel : ObservableObject
         Route = FormatActiveRoute(snapshot.Chains, Outbound);
         InboundSummary = Inbound;
         Status = "Active";
-        MatchRule = string.Empty;
-        OutboundType = string.Empty;
         ProcessDisplay = string.IsNullOrWhiteSpace(snapshot.RawProcess) ? string.Empty : snapshot.RawProcess;
         IsClosed = false;
     }
@@ -541,12 +535,6 @@ public partial class ConnectionItemViewModel : ObservableObject
     private string _download = string.Empty;
 
     [ObservableProperty]
-    private string _uploadRate = string.Empty;
-
-    [ObservableProperty]
-    private string _downloadRate = string.Empty;
-
-    [ObservableProperty]
     private string _uploadTotal = string.Empty;
 
     [ObservableProperty]
@@ -574,9 +562,6 @@ public partial class ConnectionItemViewModel : ObservableObject
     private string _startedAt = string.Empty;
 
     [ObservableProperty]
-    private string _duration = string.Empty;
-
-    [ObservableProperty]
     private string _chain = string.Empty;
 
     [ObservableProperty]
@@ -589,19 +574,10 @@ public partial class ConnectionItemViewModel : ObservableObject
     private string _status = string.Empty;
 
     [ObservableProperty]
-    private string _totalTraffic = string.Empty;
-
-    [ObservableProperty]
     private string _network = string.Empty;
 
     [ObservableProperty]
     private string _networkDisplay = string.Empty;
-
-    [ObservableProperty]
-    private string _matchRule = string.Empty;
-
-    [ObservableProperty]
-    private string _outboundType = string.Empty;
 
     [ObservableProperty]
     private string _processDisplay = string.Empty;
@@ -625,8 +601,6 @@ internal sealed class ConnectionSnapshot
         string outbound,
         string upload,
         string download,
-        string uploadRate,
-        string downloadRate,
         DateTime startTime,
         string inbound,
         string inboundType,
@@ -646,8 +620,6 @@ internal sealed class ConnectionSnapshot
         Outbound = outbound;
         Upload = upload;
         Download = download;
-        UploadRate = uploadRate;
-        DownloadRate = downloadRate;
         StartTime = startTime;
         Inbound = inbound;
         InboundType = inboundType;
@@ -676,10 +648,6 @@ internal sealed class ConnectionSnapshot
     public string Upload { get; }
 
     public string Download { get; }
-
-    public string UploadRate { get; }
-
-    public string DownloadRate { get; }
 
     public DateTime StartTime { get; }
 

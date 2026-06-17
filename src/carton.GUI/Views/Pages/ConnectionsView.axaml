@@ -257,20 +257,8 @@
                           </Border>
                           <Border Classes="detailLine">
                             <Grid ColumnDefinitions="104,*">
-                              <TextBlock Grid.Column="0" Classes="detailLabel" Text="{DynamicResource Connections.Detail.MatchRule}"/>
-                              <TextBlock Grid.Column="1" Classes="detailValue" Text="{Binding MatchRule}"/>
-                            </Grid>
-                          </Border>
-                          <Border Classes="detailLine">
-                            <Grid ColumnDefinitions="104,*">
                               <TextBlock Grid.Column="0" Classes="detailLabel" Text="{DynamicResource Connections.Detail.Outbound}"/>
                               <TextBlock Grid.Column="1" Classes="detailValue" Text="{Binding Outbound}"/>
-                            </Grid>
-                          </Border>
-                          <Border Classes="detailLine">
-                            <Grid ColumnDefinitions="104,*">
-                              <TextBlock Grid.Column="0" Classes="detailLabel" Text="{DynamicResource Connections.Detail.OutboundType}"/>
-                              <TextBlock Grid.Column="1" Classes="detailValue" Text="{Binding OutboundType}"/>
                             </Grid>
                           </Border>
                           <Border Classes="detailLine">

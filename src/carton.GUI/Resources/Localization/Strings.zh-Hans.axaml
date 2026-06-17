@@ -58,9 +58,7 @@
   <x:String x:Key="Connections.Detail.Destination">目标</x:String>
   <x:String x:Key="Connections.Detail.Domain">域名</x:String>
   <x:String x:Key="Connections.Detail.Protocol">协议</x:String>
-  <x:String x:Key="Connections.Detail.MatchRule">匹配规则</x:String>
   <x:String x:Key="Connections.Detail.Outbound">出站</x:String>
-  <x:String x:Key="Connections.Detail.OutboundType">出站类型</x:String>
   <x:String x:Key="Connections.Detail.Chain">链路</x:String>
   <x:String x:Key="Connections.Detail.Process">进程</x:String>
   <x:String x:Key="Logs.Button.Clear">清空</x:String>
