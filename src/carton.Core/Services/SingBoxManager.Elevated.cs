@@ -73,7 +73,13 @@ public partial class SingBoxManager
                 {
                     msg = $"{msg}: {recentLog}";
                 }
-                LogManager($"[ERROR] {msg}");
+                // When helper startup output has already been emitted through the sing-box
+                // log channel, keep the detailed reason there. The UI will add the single
+                // Carton "start failed" summary from State.ErrorMessage.
+                if (Interlocked.Read(ref _windowsStartupLogSequence) <= 0)
+                {
+                    LogManager($"[ERROR] {msg}");
+                }
                 StopStartupLogCapture(startupLogSession);
                 SetError(msg);
                 return false;
@@ -326,12 +332,7 @@ public partial class SingBoxManager
 
                 if (helperProcessStatus.HasProcess && !helperProcessStatus.IsRunning)
                 {
-                    _lastStartupWaitFailureReason = string.IsNullOrWhiteSpace(helperProcessStatus.Error)
-                        ? helperProcessStatus.ExitCode.HasValue
-                            ? $"sing-box exited with code {helperProcessStatus.ExitCode.Value} before API became ready"
-                            : "sing-box exited before API became ready"
-                        : helperProcessStatus.Error;
-                    LogManager($"[WARN] Elevated helper reported exited process before API ready: {_lastStartupWaitFailureReason}");
+                    _lastStartupWaitFailureReason = GetWindowsHelperExitReason(helperProcessStatus);
                     return false;
                 }
 
@@ -384,22 +385,56 @@ public partial class SingBoxManager
             // For elevated mode, check if process is still alive (only if we have a PID)
             if (elevatedPid.HasValue && elevatedPid.Value > 0)
             {
+                var processUnavailable = false;
+                string? processCheckError = null;
                 try
                 {
                     using var proc = Process.GetProcessById(elevatedPid.Value);
                     if (proc.HasExited)
                     {
-                        LogManager($"[WARN] Elevated process {elevatedPid.Value} exited while waiting for API");
-                        _lastStartupWaitFailureReason =
-                            $"sing-box process {elevatedPid.Value} exited before API became ready";
-                        return false;
+                        processUnavailable = true;
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    LogManager($"[WARN] Elevated process {elevatedPid.Value} not found while waiting for API");
+                    processUnavailable = true;
+                    processCheckError = ex.Message;
+                }
+
+                if (processUnavailable)
+                {
+                    // The helper owns the elevated process and captures its stdout/stderr. Query it
+                    // once more before falling back to a generic PID error: failures such as an
+                    // occupied inbound port often occur while the direct API probe is in flight.
+                    var latestHelperStatus = shouldQueryHelperStatus
+                        ? await TryGetWindowsHelperProcessStatusAsync(
+                            includeStartupLogs: IsStartupLogCaptureActive())
+                        : null;
+                    if (latestHelperStatus != null)
+                    {
+                        EmitWindowsHelperStartupLogs(latestHelperStatus);
+                        if (latestHelperStatus.HasProcess && !latestHelperStatus.IsRunning)
+                        {
+                            _lastStartupWaitFailureReason = GetWindowsHelperExitReason(latestHelperStatus);
+                            return false;
+                        }
+
+                        if (latestHelperStatus.IsRunning)
+                        {
+                            LogManager(
+                                $"[WARN] Direct process check for {elevatedPid.Value} failed, but elevated helper reports it is still running");
+                            await Task.Delay(500);
+                            continue;
+                        }
+                    }
+
+                    var detail = string.IsNullOrWhiteSpace(processCheckError)
+                        ? string.Empty
+                        : $": {processCheckError}";
+                    LogManager(
+                        $"[WARN] Elevated process {elevatedPid.Value} was unavailable while waiting for API{detail}");
                     _lastStartupWaitFailureReason =
-                        $"sing-box process {elevatedPid.Value} was not found before API became ready";
+                        $"sing-box process {elevatedPid.Value} exited before API became ready";
                     return false;
                 }
             }
@@ -411,6 +446,18 @@ public partial class SingBoxManager
         _lastStartupWaitFailureReason = "sing-box API did not become reachable in time";
         LogTiming("api_ready.timeout", timing.Elapsed);
         return false;
+    }
+
+    private static string GetWindowsHelperExitReason(WindowsHelperProcessStatusResponse status)
+    {
+        if (!string.IsNullOrWhiteSpace(status.Error))
+        {
+            return status.Error;
+        }
+
+        return status.ExitCode.HasValue
+            ? $"sing-box exited with code {status.ExitCode.Value} before API became ready"
+            : "sing-box exited before API became ready";
     }
 
     private async Task<ElevatedStartResult> StartElevatedProcessForCurrentPlatformAsync(string configPath, string logPath)

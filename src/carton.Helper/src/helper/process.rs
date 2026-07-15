@@ -257,7 +257,39 @@ impl HelperRuntime {
             }
         }
 
-        let api_ready = is_running && http::is_api_ready(api_address, api_secret);
+        let mut api_ready = is_running && http::is_api_ready(api_address, api_secret);
+
+        // The API probe can take up to one second. Re-check the child afterwards so a
+        // startup failure that happened during the probe (for example, a bind error)
+        // is returned with its captured stderr instead of a stale "running" status.
+        if is_running {
+            let mut state = self.state.lock().unwrap();
+            if let Some(child) = state.child.as_mut() {
+                if let Some(status) = child.try_wait()? {
+                    state.last_known_pid = Some(child.id());
+                    state.last_known_exit_code = status.code();
+                    if state.last_known_error.is_none() {
+                        state.last_known_error = self
+                            .recent_startup_log_snapshot_locked(&state, 12)
+                            .or_else(|| {
+                                Some(format!(
+                                    "sing-box exited with code {}",
+                                    status.code().unwrap_or(-1)
+                                ))
+                            });
+                    }
+                    state.child = None;
+
+                    pid = state.last_known_pid;
+                    exit_code = state.last_known_exit_code;
+                    error = state.last_known_error.clone();
+                    has_process = true;
+                    is_running = false;
+                    api_ready = false;
+                }
+            }
+        }
+
         if api_ready {
             let mut state = self.state.lock().unwrap();
             state.capture_startup_logs = false;

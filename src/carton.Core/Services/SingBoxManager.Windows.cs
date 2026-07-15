@@ -15,6 +15,10 @@ public partial class SingBoxManager
     private const int WindowsElevatedHelperPort = 47891;
     private const string WindowsElevatedHelperTokenHeader = "X-Carton-Helper-Token";
 
+    // The helper's status handler may spend up to one second probing the sing-box API.
+    // Keep the client timeout longer so startup stderr and exit details are not discarded.
+    private static readonly TimeSpan WindowsHelperStatusTimeout = TimeSpan.FromSeconds(2);
+
     private enum WindowsHelperStopResult
     {
         Success,
@@ -698,8 +702,8 @@ public partial class SingBoxManager
 
         try
         {
-            using var cts = new CancellationTokenSource(LocalApiProbeTimeout);
-            using var client = HttpClientFactory.CreateLoopbackClient(LocalApiProbeTimeout);
+            using var cts = new CancellationTokenSource(WindowsHelperStatusTimeout);
+            using var client = HttpClientFactory.CreateLoopbackClient(WindowsHelperStatusTimeout);
             var statusPath = includeStartupLogs
                 ? $"status?afterStartupLogSequence={Interlocked.Read(ref _windowsStartupLogSequence)}"
                 : "status";
