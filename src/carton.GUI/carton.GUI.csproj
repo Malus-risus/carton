@@ -68,7 +68,7 @@
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(Configuration)' == 'Debug' and '$(EnableAvaloniaDiagnostics)' == 'true'">
-		<PackageReference Include="Avalonia.Diagnostics" Version="11.3.14" />
+		<PackageReference Include="Avalonia.Diagnostics" Version="11.3.18" />
 	</ItemGroup>
 
 	<ItemGroup>
