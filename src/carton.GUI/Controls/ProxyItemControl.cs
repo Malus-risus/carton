@@ -180,11 +180,11 @@ public sealed class ProxyItemControl : Control
             context.DrawRectangle(null, TransparentBorderPen, borderRect, CornerRadius, CornerRadius);
         }
 
-        DrawContent(context, item, cardRect);
-        DrawDelayButton(context, item);
+        var delayBaseline = DrawDelayButton(context, item);
+        DrawContent(context, item, cardRect, delayBaseline);
     }
 
-    private void DrawContent(DrawingContext context, OutboundItemViewModel item, Rect cardRect)
+    private void DrawContent(DrawingContext context, OutboundItemViewModel item, Rect cardRect, double? delayBaseline)
     {
         var textBrush = GetBrush("CartonControlForegroundBaseHighBrush", Brushes.Black);
         var metadataBrush = GetBrush("CartonControlForegroundBaseMediumBrush", Brushes.Gray);
@@ -193,10 +193,14 @@ public sealed class ProxyItemControl : Control
         var titleHeight = _titleText.Draw(context, item.Tag, 13, textBrush, textWidth, new Point(HorizontalPadding, TopPadding));
 
         var typeLayout = _typeText.Get(item.Type, MetadataTypeface, 10, metadataBrush, textWidth);
-        typeLayout.Draw(context, new Point(HorizontalPadding, TopPadding + titleHeight + TypeTopGap));
+        var typeY = delayBaseline.HasValue
+            ? delayBaseline.Value - typeLayout.Baseline
+            : TopPadding + titleHeight + TypeTopGap;
+        var typeOrigin = new Point(HorizontalPadding, typeY);
+        typeLayout.Draw(context, typeOrigin);
     }
 
-    private void DrawDelayButton(DrawingContext context, OutboundItemViewModel item)
+    private double? DrawDelayButton(DrawingContext context, OutboundItemViewModel item)
     {
         var rect = GetTestButtonRect(item);
         if (_isTestButtonHot)
@@ -216,7 +220,7 @@ public sealed class ProxyItemControl : Control
                 rect.X + Math.Max(0, (rect.Width - layout.Width) / 2),
                 rect.Y + Math.Max(0, (rect.Height - layout.Height) / 2));
             layout.Draw(context, point);
-            return;
+            return point.Y + layout.Baseline;
         }
 
         var iconBrush = GetBrush("CartonControlForegroundBaseMediumBrush", Brushes.Gray);
@@ -231,6 +235,8 @@ public sealed class ProxyItemControl : Control
         {
             context.DrawGeometry(iconBrush, null, TestIconGeometry);
         }
+
+        return null;
     }
 
     private void SetItem(OutboundItemViewModel? item)
