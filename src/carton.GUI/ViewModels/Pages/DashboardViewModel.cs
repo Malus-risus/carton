@@ -8,8 +8,8 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using System;
 using System.Collections.Generic;
-using System.Collections.Specialized;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
@@ -1526,13 +1526,7 @@ public partial class DashboardViewModel : PageViewModelBase
 
             if (EnableTunInbound)
             {
-                var tunAddresses = new JsonArray((JsonNode)"172.18.0.1/30");
-                if (Socket.OSSupportsIPv6)
-                {
-                    tunAddresses.Add((JsonNode)"fdfe:dcba:9876::1/126");
-                }
-
-                // 找到已有的 tun inbound，只更新需要的字段
+                // 找到已有的 tun inbound，优先使用配置中的 address
                 JsonObject? tunInbound = null;
                 foreach (var node in inbounds)
                 {
@@ -1547,13 +1541,7 @@ public partial class DashboardViewModel : PageViewModelBase
                     tunInbound = new JsonObject { ["type"] = "tun", ["tag"] = "tun-in" };
                     inbounds.Add((JsonNode)tunInbound);
                 }
-                tunInbound["address"] = tunAddresses;
-                tunInbound["auto_route"] = true;
-                tunInbound["strict_route"] = true;
-                tunInbound["route_exclude_address"] = new JsonArray(
-                    (JsonNode)"10.0.0.0/8",
-                    (JsonNode)"192.168.0.0/16",
-                    (JsonNode)"fe80::/10");
+                TunInboundDefaults.Apply(tunInbound, Socket.OSSupportsIPv6);
             }
             else
             {

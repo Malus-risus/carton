@@ -24,7 +24,7 @@
 - `log`：只会更新 `log.level`；如果原配置没有 `log`，才会补一个最小可用的 `log` 对象
 - `inbounds`：只会处理 `mixed` 和 `tun` 两类入口
 - 对已有 `mixed` inbound，只更新 `listen`、`listen_port`、`set_system_proxy`，其他字段保持原样
-- 对已有 `tun` inbound，只更新 `address`、`auto_route`、`strict_route`、`route_exclude_address`，你额外写的其他字段都会保留
+- 对已有 `tun` inbound，优先保留原配置中的 `address`，缺失时才补上默认地址；`auto_route` 和 `strict_route` 会更新为 `true`，`route_exclude_address` 不会由 `carton` 补充或更新
 - 如果配置里原本没有对应的 `mixed` / `tun` inbound，运行时才会补上；如果关闭 `tun`，则会移除对应的 `tun` inbound
 
 > `carton` 不是官方 SFM 客户端，也不隶属于 sing-box 官方团队。
