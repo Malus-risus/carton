@@ -24,7 +24,7 @@ This is intentional because many users strongly dislike third-party GUIs overwri
 - `log`: only updates `log.level`; if the original config has no `log` object, `carton` adds a minimal one
 - `inbounds`: only touches `mixed` and `tun` inbounds
 - For an existing `mixed` inbound, it only updates `listen`, `listen_port`, and `set_system_proxy`; other fields stay as-is
-- For an existing `tun` inbound, the configured `address` is preserved and a default address is added only when it is missing; `auto_route` and `strict_route` are updated to `true`, while `route_exclude_address` is not added or updated by `carton`
+- For an existing `tun` inbound, the configured `address` is preserved and a default address is added only when it is missing; `auto_route` and `strict_route` are updated to `true`
 - If the config does not already contain the corresponding `mixed` or `tun` inbound, `carton` adds it at runtime; if `tun` is turned off, the corresponding `tun` inbound is removed
 
 > `carton` is not an official SFM client and is not affiliated with the sing-box team.
