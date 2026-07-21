@@ -369,7 +369,7 @@ public sealed class GitHubAtomReleaseSource : IGitHubReleaseSource
         response.EnsureSuccessStatusCode();
 
         var atom = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        foreach (var release in ParseReleaseAtomFeed(atom))
+        foreach (var release in ParseReleaseAtomFeed(atom, _atomFeedUrl))
         {
             if (wantPrerelease == release.IsPrerelease)
             {
@@ -380,10 +380,15 @@ public sealed class GitHubAtomReleaseSource : IGitHubReleaseSource
         return null;
     }
 
-    private static IEnumerable<GitHubReleaseLookupResult> ParseReleaseAtomFeed(string atom)
+    private static IEnumerable<GitHubReleaseLookupResult> ParseReleaseAtomFeed(
+        string atom,
+        string atomFeedUrl)
     {
         var document = XDocument.Parse(atom);
         XNamespace atomNamespace = "http://www.w3.org/2005/Atom";
+        var atomFeedUri = Uri.TryCreate(atomFeedUrl, UriKind.Absolute, out var parsedAtomFeedUri)
+            ? parsedAtomFeedUri
+            : null;
 
         foreach (var entry in document.Descendants(atomNamespace + "entry"))
         {
@@ -399,9 +404,11 @@ public sealed class GitHubAtomReleaseSource : IGitHubReleaseSource
                 continue;
             }
 
+            var htmlContent = entry.Element(atomNamespace + "content")?.Value;
             var body = NormalizeReleaseBody(
-                entry.Element(atomNamespace + "content")?.Value,
+                htmlContent,
                 entry.Element(atomNamespace + "summary")?.Value);
+            var assets = ExtractReleaseAssets(htmlContent, tag, atomFeedUri);
             var isPrerelease = GitHubReleaseLookup.IsLikelyPrereleaseTag(tag) ||
                                GitHubReleaseLookup.IsLikelyPrereleaseTag(title);
             var publishedAt = ParseAtomDateTime(
@@ -414,9 +421,77 @@ public sealed class GitHubAtomReleaseSource : IGitHubReleaseSource
                 isPrerelease,
                 string.IsNullOrWhiteSpace(title) ? tag : title,
                 body,
-                [],
+                assets,
                 publishedAt);
         }
+    }
+
+    private static IReadOnlyList<GitHubReleaseAssetLookupResult> ExtractReleaseAssets(
+        string? htmlContent,
+        string tag,
+        Uri? atomFeedUri)
+    {
+        if (string.IsNullOrWhiteSpace(htmlContent) || atomFeedUri == null)
+        {
+            return [];
+        }
+
+        const string atomSuffix = "/releases.atom";
+        var atomPath = atomFeedUri.AbsolutePath.TrimEnd('/');
+        if (!atomPath.EndsWith(atomSuffix, StringComparison.OrdinalIgnoreCase))
+        {
+            return [];
+        }
+
+        var repositoryPath = atomPath[..^atomSuffix.Length];
+        var downloadPathPrefix = $"{repositoryPath}/releases/download/";
+        var assets = new List<GitHubReleaseAssetLookupResult>();
+        var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var matches = Regex.Matches(
+            htmlContent,
+            @"href\s*=\s*(?:""(?<double>[^""]+)""|'(?<single>[^']+)')",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        foreach (Match match in matches)
+        {
+            var rawUrl = match.Groups["double"].Success
+                ? match.Groups["double"].Value
+                : match.Groups["single"].Value;
+            var decodedUrl = WebUtility.HtmlDecode(rawUrl).Trim();
+            if (!Uri.TryCreate(atomFeedUri, decodedUrl, out var downloadUri) ||
+                (downloadUri.Scheme != Uri.UriSchemeHttp && downloadUri.Scheme != Uri.UriSchemeHttps) ||
+                !string.Equals(downloadUri.Host, atomFeedUri.Host, StringComparison.OrdinalIgnoreCase) ||
+                !downloadUri.AbsolutePath.StartsWith(downloadPathPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var relativeDownloadPath = downloadUri.AbsolutePath[downloadPathPrefix.Length..];
+            var separatorIndex = relativeDownloadPath.IndexOf('/');
+            if (separatorIndex <= 0 || separatorIndex == relativeDownloadPath.Length - 1)
+            {
+                continue;
+            }
+
+            var linkedTag = Uri.UnescapeDataString(relativeDownloadPath[..separatorIndex]);
+            var encodedAssetName = relativeDownloadPath[(separatorIndex + 1)..];
+            if (!string.Equals(linkedTag, tag, StringComparison.OrdinalIgnoreCase) ||
+                encodedAssetName.Contains('/'))
+            {
+                continue;
+            }
+
+            var assetName = Uri.UnescapeDataString(encodedAssetName);
+            var absoluteUrl = downloadUri.AbsoluteUri;
+            if (string.IsNullOrWhiteSpace(assetName) || !seenUrls.Add(absoluteUrl))
+            {
+                continue;
+            }
+
+            assets.Add(new GitHubReleaseAssetLookupResult(assetName, absoluteUrl, 0));
+        }
+
+        return assets;
     }
 
     private static string? TryExtractReleaseTag(string? value)

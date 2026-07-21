@@ -41,6 +41,71 @@ public sealed class GitHubReleaseSourcesTests
     }
 
     [Fact]
+    public async Task PreferredSource_WhenApiIsSlow_UsesInstallerAssetFromAtomFallback()
+    {
+        var apiRelease = CreateRelease(
+            "v1.2.0",
+            new GitHubReleaseAssetLookupResult(
+                "carton-1.2.0-win-x64-Setup.exe",
+                "https://github.com/example/project/releases/download/v1.2.0/carton-1.2.0-win-x64-Setup.exe",
+                123));
+        var atomRelease = CreateRelease(
+            "v1.2.0",
+            new GitHubReleaseAssetLookupResult(
+                "carton-1.2.0-win-x64-Setup.exe",
+                "https://github.com/example/project/releases/download/v1.2.0/carton-1.2.0-win-x64-Setup.exe",
+                0));
+        var source = new PreferredGitHubReleaseSource(
+            new FakeReleaseSource(apiRelease, TimeSpan.FromMilliseconds(100)),
+            new FakeReleaseSource(atomRelease, TimeSpan.Zero),
+            TimeSpan.FromMilliseconds(10),
+            TimeSpan.FromSeconds(1));
+
+        var release = await source.GetLatestReleaseAsync(wantPrerelease: false);
+
+        Assert.Equal("v1.2.0", release?.Tag);
+        Assert.Contains(release!.Assets, asset =>
+            asset.Name == "carton-1.2.0-win-x64-Setup.exe");
+    }
+
+    [Fact]
+    public async Task PreferredSource_WhenApiIsRateLimited_AtomStillProvidesInstallerAsset()
+    {
+        const string atom = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <feed xmlns="http://www.w3.org/2005/Atom">
+              <entry>
+                <title>v1.2.0</title>
+                <id>tag:github.com,2008:Repository/1.0.0/v1.2.0</id>
+                <link href="https://github.com/example/project/releases/tag/v1.2.0" />
+                <content type="html">&lt;p&gt;Stable notes&lt;/p&gt;&lt;a href=&quot;https://github.com/example/project/releases/download/v1.2.0/carton-1.2.0-win-x64-Setup.exe&quot;&gt;Download&lt;/a&gt;</content>
+                <published>2026-01-01T03:04:05Z</published>
+              </entry>
+            </feed>
+            """;
+        using var apiHttpClient = new HttpClient(new StatusResponseHandler(HttpStatusCode.Forbidden));
+        using var atomHttpClient = new HttpClient(new StaticResponseHandler(atom));
+        var apiSource = new GitHubApiReleaseSource(apiHttpClient, "example", "project");
+        var source = new PreferredGitHubReleaseSource(
+            apiSource,
+            new GitHubAtomReleaseSource(atomHttpClient, "https://github.com/example/project/releases.atom"),
+            TimeSpan.FromMilliseconds(10),
+            TimeSpan.FromSeconds(1));
+
+        var release = await source.GetLatestReleaseAsync(wantPrerelease: false);
+        var hydratedRelease = await apiSource.GetReleaseByTagAsync(release!.Tag);
+
+        Assert.Equal("v1.2.0", release.Tag);
+        var installerAsset = Assert.Single(release.Assets);
+        Assert.Equal("carton-1.2.0-win-x64-Setup.exe", installerAsset.Name);
+        Assert.Equal(
+            "https://github.com/example/project/releases/download/v1.2.0/carton-1.2.0-win-x64-Setup.exe",
+            installerAsset.DownloadUrl);
+        Assert.Equal(0, installerAsset.Size);
+        Assert.Null(hydratedRelease);
+    }
+
+    [Fact]
     public async Task PreferredSource_ApiOnlyStrategyDoesNotUseFallback()
     {
         var apiRelease = CreateRelease("v1.2.0");
@@ -134,14 +199,16 @@ public sealed class GitHubReleaseSourcesTests
         Assert.Contains("Preview", prerelease?.Body);
     }
 
-    private static GitHubReleaseLookupResult CreateRelease(string tag)
+    private static GitHubReleaseLookupResult CreateRelease(
+        string tag,
+        params GitHubReleaseAssetLookupResult[] assets)
         => new(
             tag,
             GitHubReleaseLookup.NormalizeVersion(tag),
             GitHubReleaseLookup.IsLikelyPrereleaseTag(tag),
             tag,
             string.Empty,
-            [],
+            assets,
             DateTimeOffset.MinValue);
 
     private sealed class FakeReleaseSource : IGitHubReleaseSource
@@ -240,6 +307,23 @@ public sealed class GitHubReleaseSourcesTests
             {
                 Content = new StringContent(_content)
             });
+        }
+    }
+
+    private sealed class StatusResponseHandler : HttpMessageHandler
+    {
+        private readonly HttpStatusCode _statusCode;
+
+        public StatusResponseHandler(HttpStatusCode statusCode)
+        {
+            _statusCode = statusCode;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new HttpResponseMessage(_statusCode));
         }
     }
 }
