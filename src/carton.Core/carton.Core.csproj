@@ -13,6 +13,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Downloader" Version="5.8.0" />
+		<PackageReference Include="Downloader" Version="5.9.5" />
 	</ItemGroup>
 </Project>

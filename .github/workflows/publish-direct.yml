@@ -144,10 +144,10 @@ jobs:
       TAG: ${{ needs.metadata.outputs.tag }}
       REPO: ${{ github.repository }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
 
@@ -437,7 +437,7 @@ jobs:
       - build
     if: ${{ needs.build.result == 'success' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           sparse-checkout: |
@@ -445,7 +445,7 @@ jobs:
 
       - name: Build commit changelog
         id: changelog
-        uses: mikepenz/release-changelog-builder-action@v6.0.1
+        uses: mikepenz/release-changelog-builder-action@v6.2.3
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
