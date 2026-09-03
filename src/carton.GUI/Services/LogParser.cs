@@ -12,7 +12,7 @@ internal static class LogParser
             return (currentTime, "Info", string.Empty);
         }
 
-        message = StripAnsiEscapeSequences(message);
+        message = carton.Core.Services.KernelLogCleaner.StripAnsi(message);
 
         return message switch
         {
@@ -30,9 +30,18 @@ internal static class LogParser
         };
     }
 
+    /// <summary>
+    /// Strips ANSI escape sequences (color codes and sing-box line counters) from a
+    /// raw kernel log message. Idempotent: already-clean text passes through unchanged.
+    /// Callers that assemble their own level (e.g. the gRPC log stream) must use this
+    /// before displaying the message - sing-box emits colored output through every
+    /// channel, not only the ones parsed by ParseSingBoxLog below.
+    /// </summary>
+    public static string StripAnsi(string message) => carton.Core.Services.KernelLogCleaner.StripAnsi(message);
+
     public static (string Time, string Level, string Message) ParseSingBoxLog(string message, string currentTime)
     {
-        var msg = StripAnsiEscapeSequences(message);
+        var msg = carton.Core.Services.KernelLogCleaner.StripAnsi(message);
 
         var span = msg.AsSpan().TrimStart();
         var prefixedLevel = TryStripPrefixedLevel(ref span);
@@ -261,104 +270,5 @@ internal static class LogParser
 
         level = normalized ?? "Info";
         return normalized != null;
-    }
-
-    private static string StripAnsiEscapeSequences(string message)
-    {
-        var escapeIndex = message.IndexOf('\u001b');
-        var orphanCsiIndex = FindOrphanCsiIndex(message);
-        if (escapeIndex < 0 && orphanCsiIndex < 0)
-        {
-            return message;
-        }
-
-        var firstSpecialIndex = escapeIndex < 0
-            ? orphanCsiIndex
-            : orphanCsiIndex < 0
-                ? escapeIndex
-                : Math.Min(escapeIndex, orphanCsiIndex);
-
-        var rented = ArrayPool<char>.Shared.Rent(message.Length);
-        try
-        {
-            message.AsSpan(0, firstSpecialIndex).CopyTo(rented);
-            var writeIndex = firstSpecialIndex;
-            for (var readIndex = firstSpecialIndex; readIndex < message.Length; readIndex++)
-            {
-                var ch = message[readIndex];
-                if (ch == '\u001b' &&
-                    readIndex + 1 < message.Length &&
-                    message[readIndex + 1] == '[')
-                {
-                    var endIndex = FindCsiTerminator(message, readIndex + 2);
-                    if (endIndex >= 0)
-                    {
-                        readIndex = endIndex;
-                        continue;
-                    }
-                }
-
-                if (ch == '[' &&
-                    readIndex + 1 < message.Length &&
-                    IsCsiParameterChar(message[readIndex + 1]))
-                {
-                    var endIndex = FindCsiTerminator(message, readIndex + 1);
-                    if (endIndex >= 0)
-                    {
-                        readIndex = endIndex;
-                        continue;
-                    }
-                }
-
-                rented[writeIndex++] = ch;
-            }
-
-            return new string(rented, 0, writeIndex);
-        }
-        finally
-        {
-            ArrayPool<char>.Shared.Return(rented);
-        }
-    }
-
-    private static int FindOrphanCsiIndex(string message)
-    {
-        for (var i = 0; i < message.Length - 1; i++)
-        {
-            if (message[i] == '[' && IsCsiParameterChar(message[i + 1]))
-            {
-                var endIndex = FindCsiTerminator(message, i + 1);
-                if (endIndex >= 0)
-                {
-                    return i;
-                }
-            }
-        }
-
-        return -1;
-    }
-
-    private static int FindCsiTerminator(string message, int startIndex)
-    {
-        for (var i = startIndex; i < message.Length; i++)
-        {
-            var ch = message[i];
-            if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z'))
-            {
-                return i;
-            }
-
-            if (!IsCsiParameterChar(ch))
-            {
-                return -1;
-            }
-        }
-
-        return -1;
-    }
-
-    private static bool IsCsiParameterChar(char ch)
-    {
-        return (ch >= '0' && ch <= '9') || ch == ';';
     }
 }

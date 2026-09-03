@@ -608,7 +608,10 @@ internal sealed class SingBoxGrpcApiClient : ISingBoxApiClient, IDisposable
             foreach (var msg in logMsg.Messages)
             {
                 var levelStr = MapLogLevel(msg.Level);
-                yield return new KernelLogEntry(levelStr, msg.Message_);
+                // Strip ANSI at the source: sing-box colors every channel, and this
+                // entry's non-empty level means the UI store will pass the message
+                // through VERBATIM (only level-less entries go through ParseSingBoxLog).
+                yield return new KernelLogEntry(levelStr, carton.Core.Services.KernelLogCleaner.StripAnsi(msg.Message_));
             }
         }
     }

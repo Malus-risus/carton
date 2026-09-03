@@ -20,6 +20,18 @@ var samples = new (string Name, string Message)[]
     (
         "plain-info",
         "startup complete"
+    ),
+    (
+        "ansi-debug-counter",
+        "[37mDEBUG[0m[0001] dns: lookup succeed for dm.89330595.xyz: 69.63.220.57"
+    ),
+    (
+        "clean-typical",
+        "dns: lookup succeed for dm.89330595.xyz: 69.63.220.57"
+    ),
+    (
+        "clean-long",
+        "connection 2338118782: outbound/proxy: connected to server server-hk-01 via relay relay-us-02 with latency 42ms tunnel vless-tcp for domain example.com and resolved address 104.21.5.99"
     )
 };
 
@@ -47,6 +59,33 @@ foreach (var sample in samples)
     for (var i = 0; i < measureIterations; i++)
     {
         _ = LogParser.ParseSingBoxLog(sample.Message, "21:30:40");
+    }
+    stopwatch.Stop();
+    var allocated = GC.GetAllocatedBytesForCurrentThread() - beforeAlloc;
+
+    var nsPerOp = stopwatch.Elapsed.TotalMilliseconds * 1_000_000d / measureIterations;
+    Console.WriteLine($"{sample.Name,-18} {nsPerOp,10:F1} ns/op  alloc={allocated / (double)measureIterations:F1} B/op");
+}
+
+Console.WriteLine();
+Console.WriteLine("=== KernelLogCleaner.StripAnsi (per message) ===");
+
+foreach (var sample in samples)
+{
+    for (var i = 0; i < warmupIterations; i++)
+    {
+        _ = carton.Core.Services.KernelLogCleaner.StripAnsi(sample.Message);
+    }
+
+    GC.Collect();
+    GC.WaitForPendingFinalizers();
+    GC.Collect();
+
+    var beforeAlloc = GC.GetAllocatedBytesForCurrentThread();
+    var stopwatch = Stopwatch.StartNew();
+    for (var i = 0; i < measureIterations; i++)
+    {
+        _ = carton.Core.Services.KernelLogCleaner.StripAnsi(sample.Message);
     }
     stopwatch.Stop();
     var allocated = GC.GetAllocatedBytesForCurrentThread() - beforeAlloc;

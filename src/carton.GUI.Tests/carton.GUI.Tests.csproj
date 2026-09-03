@@ -18,6 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\carton.Core\Services\KernelLogCleaner.cs" Link="Services\KernelLogCleaner.cs" />
     <Compile Include="..\carton.GUI\Services\LogParser.cs" Link="Services\LogParser.cs" />
     <Compile Include="..\carton.GUI\Services\AppLaunchOptions.cs" Link="Services\AppLaunchOptions.cs" />
     <Compile Include="..\carton.GUI\Services\KernelCacheCleanupService.cs" Link="Services\KernelCacheCleanupService.cs" />
