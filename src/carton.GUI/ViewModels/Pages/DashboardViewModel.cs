@@ -42,6 +42,7 @@ public partial class DashboardViewModel : PageViewModelBase
     private readonly IProfileManager? _profileManager;
     private readonly IConfigManager? _configManager;
     private readonly RemoteConfigUpdateService? _remoteConfigUpdateService;
+    private readonly IPreferencesService? _preferencesService;
     private readonly Action<string, int>? _toastWriter;
     private readonly Action<string>? _logWriter;
     private readonly ILocalizationService _localizationService;
@@ -303,12 +304,6 @@ public partial class DashboardViewModel : PageViewModelBase
     }
 
     [RelayCommand]
-    private void OpenClashWebUi()
-    {
-        LaunchWebUi(BuildClashWebUiUrl, "Clash API WebUI");
-    }
-
-    [RelayCommand]
     private void OpenSingBoxWebUi()
     {
         LaunchWebUi(BuildSingBoxWebUiUrl, "sing-box API WebUI");
@@ -392,7 +387,6 @@ public partial class DashboardViewModel : PageViewModelBase
         OnPropertyChanged(nameof(ShowVerboseLogLevelHint));
     }
 
-    private const int DefaultClashApiPort = 9090;
     private const int DefaultSingBoxApiPort = 9091;
 
     public bool ShowStartupSelector => !IsConnected;
@@ -475,12 +469,14 @@ public partial class DashboardViewModel : PageViewModelBase
         _profileManager = profileManager;
         _configManager = configManager;
         _remoteConfigUpdateService = new RemoteConfigUpdateService(configManager, profileManager, preferencesService);
+        _preferencesService = preferencesService;
         _toastWriter = toastWriter;
         _logWriter = logWriter;
         _kernelManager.InstalledKernelChanged += OnInstalledKernelChanged;
         _singBoxManager.StatusChanged += OnStatusChanged;
         _singBoxManager.TrafficUpdated += OnTrafficUpdated;
         _singBoxManager.MemoryUpdated += OnMemoryUpdated;
+        _singBoxManager.ClashModeChanged += OnClashModeChanged;
         KernelStatus = _singBoxManager.State.Status;
         _ = LoadProfilesAsync();
         _ = RefreshKernelVersionAsync();
@@ -542,6 +538,7 @@ public partial class DashboardViewModel : PageViewModelBase
         if (status == ServiceStatus.Running)
         {
             Dispatcher.UIThread.Post(UpdateLiveRefreshState);
+            _ = ReportDeprecatedWarningsAsync();
         }
         else
         {
@@ -595,6 +592,33 @@ public partial class DashboardViewModel : PageViewModelBase
     private void InitializeMemoryMetrics()
     {
         ApplyMemoryUsage(_singBoxManager?.State.MemoryInUse ?? 0);
+    }
+
+    private void OnClashModeChanged(object? sender, string mode)
+    {
+        // Push-driven mode updates: fires on our own SetModeAsync (optimistic) and on
+        // changes made by other control clients (official sing-box dashboard).
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            // Mode changes can flip GLOBAL group visibility on the Groups page: mark the
+            // cache dirty so navigation there reloads instead of rendering stale groups.
+            // Preserve the known mode list - overwriting it with null (before the first
+            // GetModeConfigAsync filled it) collapses the selector to a single button.
+            var previous = _clashConfigCache.Current;
+            var newModeList = previous?.ModeList;
+            if (newModeList == null && _singBoxManager is { IsRunning: true })
+            {
+                // List not fetched yet: request it once so the selector keeps its options.
+                _ = RefreshClashModeAsync();
+            }
+
+            _clashConfigCache.Update(new ApiModeConfigSnapshot
+            {
+                Mode = mode,
+                ModeList = newModeList
+            }, isDirty: true);
+            UpdateClashModeSelection(mode);
+        });
     }
 
     private void OnMemoryUpdated(object? sender, long memoryInUse)
@@ -1035,19 +1059,8 @@ public partial class DashboardViewModel : PageViewModelBase
         var success = await SetClashModeAsync(option.Mode);
         if (success)
         {
-            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                if (_clashConfigCache.Current is { } current)
-                {
-                    _clashConfigCache.Update(new ApiModeConfigSnapshot
-                    {
-                        Mode = option.Mode,
-                        ModeList = current.ModeList
-                    }, isDirty: true);
-                }
-
-                UpdateClashModeSelection(option.Mode);
-            });
+            // The manager updates its push-stream cache and raises ClashModeChanged,
+            // which refreshes the UI selection - no hand-built cache snapshot needed.
         }
         else
         {
@@ -1077,6 +1090,37 @@ public partial class DashboardViewModel : PageViewModelBase
     private void LogError(string message)
     {
         _logWriter?.Invoke($"[ERROR] {message}");
+    }
+
+    private async Task ReportDeprecatedWarningsAsync()
+    {
+        if (_singBoxManager == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var warnings = await _singBoxManager.GetDeprecatedWarningsAsync();
+            if (warnings.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var warning in warnings)
+            {
+                // Surface kernel config deprecations (e.g. legacy clash_api fields) once
+                // per running session so users can migrate before the removal version.
+                var suffix = string.IsNullOrWhiteSpace(warning.MigrationLink)
+                    ? string.Empty
+                    : $" (migration: {warning.MigrationLink})";
+                LogWarning($"[sing-box] Deprecated config: {warning.Message}{suffix}");
+            }
+        }
+        catch
+        {
+            // Deprecation reporting is best-effort; never disturb the startup flow.
+        }
     }
 
     private void LogWarning(string message)
@@ -1559,147 +1603,125 @@ public partial class DashboardViewModel : PageViewModelBase
             root["inbounds"] = inbounds;
             ApplyRuntimeLogLevel(root, NormalizeLogLevel(_runtimeOptions.LogLevel));
 
+            var services = root["services"] as JsonArray ?? new JsonArray();
+            root["services"] = services;
+
+            var apiService = GetOrCreateApiService(services);
+            var nativeApiPort = 0;
+            var hasConfiguredNativeApiPort = false;
+            if (TryReadJsonInt(apiService, "listen_port", out var servicePort) &&
+                IsValidPort(servicePort))
+            {
+                hasConfiguredNativeApiPort = true;
+                nativeApiPort = servicePort;
+            }
+
+            var nativeApiSecret = string.Empty;
+            if (TryReadJsonString(apiService, "secret", out var serviceSecret))
+            {
+                nativeApiSecret = serviceSecret;
+            }
+
+            // Cross-inherit secrets like the legacy path did: an explicit clash_api secret
+            // authorizes the native API too, and vice versa - both fronts should agree.
+            var experimentalForSecrets = root["experimental"] as JsonObject;
+            if (string.IsNullOrWhiteSpace(nativeApiSecret) &&
+                experimentalForSecrets?[
+"clash_api"] is JsonObject existingClashApi &&
+                TryReadJsonString(existingClashApi, "secret", out var existingClashSecret))
+            {
+                nativeApiSecret = existingClashSecret;
+            }
+
+            var portPlan = ApiPortPlanner.Resolve(
+                DefaultSingBoxApiPort,
+                SingBoxDashboardBootstrapService.PreferredPort,
+                hasConfiguredNativeApiPort,
+                nativeApiPort);
+            nativeApiPort = portPlan.NativeApiPort;
+
+            apiService["type"] = "api";
+            if (!TryReadJsonString(apiService, "tag", out _))
+            {
+                apiService["tag"] = "carton-api";
+            }
+            if (!TryReadJsonString(apiService, "listen", out var nativeApiListen) ||
+                string.IsNullOrWhiteSpace(nativeApiListen))
+            {
+                apiService["listen"] = "127.0.0.1";
+            }
+            apiService["listen_port"] = nativeApiPort;
+            apiService["secret"] = nativeApiSecret;
+            var dashboardBootstrap = SingBoxDashboardBootstrapService.Configure(
+                nativeApiPort,
+                nativeApiSecret,
+                LogWarning,
+                nativeApiPort,
+                nativeApiPort);
+            apiService["access_control_allow_origin"] = new JsonArray(
+                (JsonNode)"http://sing-box-dashboard.sagernet.org",
+                (JsonNode)"https://sing-box-dashboard.sagernet.org",
+                (JsonNode)"http://dash.sing-box.app",
+                (JsonNode)"https://dash.sing-box.app",
+                (JsonNode)dashboardBootstrap.Origin);
+            apiService["access_control_allow_private_network"] = true;
+
             var experimental = root["experimental"] as JsonObject ?? new JsonObject();
             root["experimental"] = experimental;
 
+            // Keep a minimal clash_api block instead of removing it: sing-box only creates the
+            // clash server (mode list / SetClashMode / SubscribeClashMode backend for the gRPC
+            // daemon API) when experimental.clash_api is present, and clash_mode route rules
+            // never match without it. An empty external_controller disables the legacy REST
+            // listener (sing-box skips listening when it is empty) while keeping the mode
+            // feature alive - the same trick the official graphical clients use.
+            // Explicit user values are preserved (same standard as store_dns below); only
+            // missing fields get the minimal mode-backend defaults.
             var clashApi = experimental["clash_api"] as JsonObject ?? new JsonObject();
-            var useNativeApi = CartonApplicationInfo.SupportsNativeApi(CartonApplicationInfo.EffectiveSingBoxVersion);
-
-            var clashApiPort = DefaultClashApiPort;
-            var clashApiSecret = string.Empty;
-            var hasConfiguredClashApiPort = false;
-
-            if (TryReadExternalControllerPort(clashApi, out var clashControllerPort) &&
-                IsValidPort(clashControllerPort))
+            if (!clashApi.ContainsKey("external_controller"))
             {
-                hasConfiguredClashApiPort = true;
-                clashApiPort = clashControllerPort;
+                clashApi["external_controller"] = "";
             }
 
-            if (TryReadJsonString(clashApi, "secret", out var clashSecret))
+            if (!clashApi.ContainsKey("secret"))
             {
-                clashApiSecret = clashSecret;
+                clashApi["secret"] = nativeApiSecret;
             }
 
-            if (useNativeApi)
+            if (!clashApi.ContainsKey("default_mode"))
             {
-                var services = root["services"] as JsonArray ?? new JsonArray();
-                root["services"] = services;
-
-                var apiService = GetOrCreateApiService(services);
-                var nativeApiPort = 0;
-                var hasConfiguredNativeApiPort = false;
-                if (TryReadJsonInt(apiService, "listen_port", out var servicePort) &&
-                    IsValidPort(servicePort))
-                {
-                    hasConfiguredNativeApiPort = true;
-                    nativeApiPort = servicePort;
-                }
-
-                var nativeApiSecret = string.Empty;
-                if (TryReadJsonString(apiService, "secret", out var serviceSecret))
-                {
-                    nativeApiSecret = serviceSecret;
-                }
-
-                if (string.IsNullOrWhiteSpace(nativeApiSecret))
-                {
-                    nativeApiSecret = clashApiSecret;
-                }
-
-                if (string.IsNullOrWhiteSpace(clashApiSecret))
-                {
-                    clashApiSecret = nativeApiSecret;
-                }
-
-                var portPlan = ApiPortPlanner.Resolve(
-                    DefaultClashApiPort,
-                    DefaultSingBoxApiPort,
-                    SingBoxDashboardBootstrapService.PreferredPort,
-                    hasConfiguredClashApiPort,
-                    clashApiPort,
-                    enableNativeApi: true,
-                    hasConfiguredNativeApiPort,
-                    nativeApiPort);
-                clashApiPort = portPlan.ClashApiPort;
-                nativeApiPort = portPlan.NativeApiPort;
-
-                apiService["type"] = "api";
-                if (!TryReadJsonString(apiService, "tag", out _))
-                {
-                    apiService["tag"] = "carton-api";
-                }
-                if (!TryReadJsonString(apiService, "listen", out var nativeApiListen) ||
-                    string.IsNullOrWhiteSpace(nativeApiListen))
-                {
-                    apiService["listen"] = "127.0.0.1";
-                }
-                apiService["listen_port"] = nativeApiPort;
-                apiService["secret"] = nativeApiSecret;
-                var dashboardBootstrap = SingBoxDashboardBootstrapService.Configure(
-                    nativeApiPort,
-                    nativeApiSecret,
-                    LogWarning,
-                    clashApiPort,
-                    nativeApiPort);
-                apiService["access_control_allow_origin"] = new JsonArray(
-                    (JsonNode)"http://sing-box-dashboard.sagernet.org",
-                    (JsonNode)"https://sing-box-dashboard.sagernet.org",
-                    (JsonNode)"http://dash.sing-box.app",
-                    (JsonNode)"https://dash.sing-box.app",
-                    (JsonNode)dashboardBootstrap.Origin);
-                apiService["access_control_allow_private_network"] = true;
-
-                if (!hasConfiguredClashApiPort)
-                {
-                    clashApi["external_controller"] = $"127.0.0.1:{clashApiPort}";
-                }
-                clashApi["secret"] = clashApiSecret;
-                clashApi["external_ui"] = "dashboard";
-                experimental["clash_api"] = clashApi;
-
-                HttpClientFactory.UpdateLocalApi(
-                    "127.0.0.1",
-                    clashApiPort,
-                    clashApiSecret,
-                    clashApiPort,
-                    clashApiSecret);
-                HttpClientFactory.UpdateLocalNativeApi("127.0.0.1", nativeApiPort, nativeApiSecret);
+                clashApi["default_mode"] = "rule";
             }
-            else
+
+            experimental["clash_api"] = clashApi;
+
+            HttpClientFactory.UpdateLocalApi(
+                "127.0.0.1",
+                nativeApiPort,
+                nativeApiSecret);
+            HttpClientFactory.UpdateLocalNativeApi("127.0.0.1", nativeApiPort, nativeApiSecret);
+            // Persist the endpoint so a restarted carton can re-attach to this kernel
+            // (see MainViewModel.InitializeAsync restore).
+            if (_preferencesService != null)
             {
-                var portPlan = ApiPortPlanner.Resolve(
-                    DefaultClashApiPort,
-                    DefaultSingBoxApiPort,
-                    SingBoxDashboardBootstrapService.PreferredPort,
-                    hasConfiguredClashApiPort,
-                    clashApiPort,
-                    enableNativeApi: false,
-                    hasConfiguredNativeApiPort: false,
-                    configuredNativeApiPort: 0);
-                clashApiPort = portPlan.ClashApiPort;
-
-                if (!hasConfiguredClashApiPort)
-                {
-                    clashApi["external_controller"] = $"127.0.0.1:{clashApiPort}";
-                }
-                clashApi["external_ui"] = "dashboard";
-                experimental["clash_api"] = clashApi;
-
-                HttpClientFactory.UpdateLocalApi(
-                    "127.0.0.1",
-                    clashApiPort,
-                    clashApiSecret,
-                    clashApiPort,
-                    clashApiSecret);
-                HttpClientFactory.ClearLocalNativeApi();
+                var preferences = _preferencesService.Load();
+                preferences.LastNativeApiPort = nativeApiPort;
+                preferences.LastNativeApiSecret = carton.Core.Services.SecretProtector.Protect(nativeApiSecret);
+                _preferencesService.Save(preferences);
             }
+
             OnPropertyChanged(nameof(ShowSingBoxWebUiOption));
 
             var cacheFile = experimental["cache_file"] as JsonObject ?? new JsonObject();
             cacheFile["enabled"] = true;
             cacheFile["path"] = "cache.db";
             cacheFile["store_fakeip"] = true;
+            // store_dns requires sing-box >= 1.14.0; never override an explicit user choice.
+            if (!cacheFile.ContainsKey("store_dns"))
+            {
+                cacheFile["store_dns"] = true;
+            }
+
             experimental["cache_file"] = cacheFile;
 
             var runtimeDirectory = _configManager!.RuntimeConfigDirectory;
@@ -1725,18 +1747,34 @@ public partial class DashboardViewModel : PageViewModelBase
         }
     }
 
+    private int _clashModeRefreshInFlight;
+
     private async Task RefreshClashModeAsync()
     {
-        if (!_clashConfigCache.TryGetFresh(ClashModeCacheDuration, out var config))
+        // Coalesce concurrent refreshes: rapid mode pushes (e.g. before the mode list
+        // lands) must not fan out into parallel API round-trips.
+        if (Interlocked.CompareExchange(ref _clashModeRefreshInFlight, 1, 0) != 0)
         {
-            config = await GetClashConfigFromApiAsync();
+            return;
         }
 
-        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+        try
         {
-            ApplyClashModeOptions(config?.ModeList, config?.Mode);
-            UpdateClashModeSelection(config?.Mode);
-        });
+            if (!_clashConfigCache.TryGetFresh(ClashModeCacheDuration, out var config))
+            {
+                config = await GetClashConfigFromApiAsync();
+            }
+
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                ApplyClashModeOptions(config?.ModeList, config?.Mode);
+                UpdateClashModeSelection(config?.Mode);
+            });
+        }
+        finally
+        {
+            Volatile.Write(ref _clashModeRefreshInFlight, 0);
+        }
     }
 
     private void ResetTrafficDisplay()
@@ -1962,29 +2000,6 @@ public partial class DashboardViewModel : PageViewModelBase
 
     private static string FormatBytes(long bytes) => FormatHelper.FormatBytes(bytes);
     private static string FormatBytesPerSecond(long bytesPerSecond) => FormatHelper.FormatBytesPerSecond(bytesPerSecond);
-
-    private static string BuildClashWebUiUrl()
-    {
-        var useClashEndpoint = HttpClientFactory.LocalClashApiPort > 0;
-        var port = useClashEndpoint
-            ? HttpClientFactory.LocalClashApiPort
-            : HttpClientFactory.LocalApiPort > 0 ? HttpClientFactory.LocalApiPort : DefaultClashApiPort;
-        var secret = useClashEndpoint
-            ? HttpClientFactory.LocalClashApiSecret
-            : HttpClientFactory.LocalApiSecret;
-        var queryParts = new List<string>
-        {
-            "hostname=127.0.0.1",
-            $"port={port}"
-        };
-
-        if (!string.IsNullOrWhiteSpace(secret))
-        {
-            queryParts.Add($"secret={Uri.EscapeDataString(secret)}");
-        }
-
-        return $"http://127.0.0.1:{port}/ui/?{string.Join("&", queryParts)}";
-    }
 
     private static string BuildSingBoxWebUiUrl()
     {
@@ -2269,21 +2284,6 @@ public partial class DashboardViewModel : PageViewModelBase
     private static bool IsValidPort(int port)
     {
         return port is > 0 and <= 65535;
-    }
-
-    private static bool TryReadExternalControllerPort(JsonObject clashApi, out int port)
-    {
-        port = 0;
-        if (!TryReadJsonString(clashApi, "external_controller", out var externalController) ||
-            string.IsNullOrWhiteSpace(externalController))
-        {
-            return false;
-        }
-
-        var portPos = externalController.LastIndexOf(':');
-        return portPos >= 0 &&
-               portPos < externalController.Length - 1 &&
-               int.TryParse(externalController[(portPos + 1)..], out port);
     }
 
     private static bool TryReadJsonString(JsonObject obj, string propertyName, out string value)

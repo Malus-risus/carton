@@ -199,6 +199,8 @@ public partial class MainViewModel : ViewModelBase
         _singBoxManager.StatusChanged += OnStatusChanged;
         _singBoxManager.ManagerLogReceived += OnManagerLogReceived;
         _singBoxManager.LogReceived += OnLogReceived;
+        _singBoxManager.KernelLogsReset += OnKernelLogsReset;
+        _singBoxManager.KernelVersionRejected += OnKernelVersionRejected;
 
         DashboardViewModel = new DashboardViewModel(_singBoxManager, _kernelManager, _profileManager, _configManager, _preferencesService, ShowToast, _logStore.AddLog);
         _lazyGroupsViewModel = new Lazy<GroupsViewModel>(() => new GroupsViewModel(_singBoxManager, _preferencesService));
@@ -261,6 +263,40 @@ public partial class MainViewModel : ViewModelBase
     private async Task InitializeAsync()
     {
         _currentPreferences = _preferencesService.Load();
+
+        // Restore the last native API endpoint so a restarted carton can re-attach to
+        // an externally still-running kernel (e.g. carton was killed while TUN was
+        // active) instead of probing the static default port and reporting "not running".
+        if (_currentPreferences.LastNativeApiPort > 0)
+        {
+            var storedSecret = carton.Core.Services.SecretProtector.Unprotect(_currentPreferences.LastNativeApiSecret);
+            HttpClientFactory.UpdateLocalApi(
+                "127.0.0.1",
+                _currentPreferences.LastNativeApiPort,
+                storedSecret);
+            HttpClientFactory.UpdateLocalNativeApi(
+                "127.0.0.1",
+                _currentPreferences.LastNativeApiPort,
+                storedSecret);
+
+            // Upgrade hygiene: a pre-DPAPI release stored this secret as plain text.
+            // Encrypt it in place right now instead of waiting for the next successful
+            // kernel start (which may never come) to overwrite the file.
+            // Gate on the INPUT form (IsProtected), NOT on comparing ciphertexts:
+            // DPAPI encryption is non-deterministic, so a re-protected value differs
+            // from the stored blob on every launch and would rewrite the file forever.
+            if (!string.IsNullOrWhiteSpace(storedSecret) &&
+                !carton.Core.Services.SecretProtector.IsProtected(_currentPreferences.LastNativeApiSecret))
+            {
+                var reProtected = carton.Core.Services.SecretProtector.Protect(storedSecret);
+                if (!string.Equals(reProtected, _currentPreferences.LastNativeApiSecret, StringComparison.Ordinal))
+                {
+                    _currentPreferences.LastNativeApiSecret = reProtected;
+                    _preferencesService.Save(_currentPreferences);
+                }
+            }
+        }
+
         _suppressPreferenceUpdates = true;
         SelectedKernelDownloadMirror = _currentPreferences.KernelDownloadMirror;
         _suppressPreferenceUpdates = false;
@@ -405,6 +441,80 @@ public partial class MainViewModel : ViewModelBase
     private void OnLogReceived(object? sender, KernelLogEntry log)
     {
         _logStore.AddSingBoxLog(log);
+    }
+
+    private void OnKernelLogsReset(object? sender, EventArgs e)
+    {
+        // The kernel reset its log buffer and will replay its saved history next:
+        // drop stale kernel lines so the replay does not duplicate them.
+        _logStore.RemoveSource(LogSource.SingBox);
+    }
+
+    private void OnKernelVersionRejected(object? sender, string message)
+    {
+        // Hard version gate tripped at startup: blocking dialog directing the user
+        // to install a supported kernel (>= 1.14.0). The rejection typically fires
+        // during auto-start with the window still hidden in the tray, so the dialog
+        // must bring the main window up first - ShowDialog on a hidden owner throws.
+        Dispatcher.UIThread.Post(async () =>
+        {
+            var desktop = Avalonia.Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime;
+            var owner = desktop?.MainWindow;
+            if (owner is { IsVisible: false })
+            {
+                owner.Show();
+                if (owner.WindowState == Avalonia.Controls.WindowState.Minimized)
+                {
+                    owner.WindowState = Avalonia.Controls.WindowState.Normal;
+                }
+            }
+
+            await ShowKernelVersionRejectedDialogAsync(message);
+        });
+    }
+
+    private async Task ShowKernelVersionRejectedDialogAsync(string message)
+    {
+        var desktop = Avalonia.Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime;
+        var owner = desktop?.MainWindow;
+        if (owner == null)
+        {
+            ShowToast(message);
+            return;
+        }
+
+        var dialog = new Avalonia.Controls.Window
+        {
+            Width = 460,
+            SizeToContent = Avalonia.Controls.SizeToContent.Height,
+            CanResize = false,
+            WindowStartupLocation = Avalonia.Controls.WindowStartupLocation.CenterOwner,
+            Title = GetString("Kernel.Unsupported.Title", "Unsupported sing-box Version"),
+            ShowInTaskbar = false
+        };
+
+        var messageBlock = new Avalonia.Controls.TextBlock
+        {
+            Text = message,
+            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+            Margin = new Avalonia.Thickness(0, 0, 0, 16)
+        };
+
+        var okButton = new Avalonia.Controls.Button
+        {
+            Content = GetString("Common.Ok", "OK"),
+            MinWidth = 110,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right
+        };
+        okButton.Click += (_, _) => dialog.Close();
+
+        dialog.Content = new Avalonia.Controls.StackPanel
+        {
+            Margin = new Avalonia.Thickness(24),
+            Children = { messageBlock, okButton }
+        };
+
+        await dialog.ShowDialog(owner);
     }
 
     private void OnManagerLogReceived(object? sender, string log)

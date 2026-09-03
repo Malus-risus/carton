@@ -171,7 +171,6 @@
   <x:String x:Key="Dashboard.Menu.OpenCmd">Open CMD</x:String>
   <x:String x:Key="Dashboard.Menu.OpenPs">Open PowerShell</x:String>
   <x:String x:Key="Dashboard.Button.OpenWebUi">Open WebUI</x:String>
-  <x:String x:Key="Dashboard.Menu.OpenClashWebUi">Clash API WebUI</x:String>
   <x:String x:Key="Dashboard.Menu.OpenSingBoxWebUi">sing-box API WebUI</x:String>
   <x:String x:Key="Dashboard.Status.OpenWebUiFailed">Failed to open WebUI</x:String>
   <x:String x:Key="Dashboard.Status.SystemProxyToggleFailed">Failed to toggle system proxy</x:String>
@@ -403,4 +402,7 @@ This action cannot be undone. Continue?</x:String>
   <x:String x:Key="Settings.Kernel.CustomInstall.SuccessToast">Custom kernel installed: {0}</x:String>
 
   <x:String x:Key="Common.Unknown">unknown</x:String>
+  <x:String x:Key="Kernel.Unsupported.Title">Unsupported sing-box Version</x:String>
+  <x:String x:Key="Settings.Kernel.BlockedDialog.Title">Unsupported sing-box Version</x:String>
+  <x:String x:Key="Common.Ok">OK</x:String>
 </ResourceDictionary>

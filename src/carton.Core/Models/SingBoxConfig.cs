@@ -19,6 +19,9 @@ public class SingBoxConfig
     [JsonPropertyName("route")]
     public RouteConfig? Route { get; set; }
 
+    [JsonPropertyName("services")]
+    public List<ServiceConfig>? Services { get; set; }
+
     [JsonPropertyName("experimental")]
     public ExperimentalConfig? Experimental { get; set; }
 }
@@ -216,6 +219,31 @@ public class CacheFileConfig
 
     [JsonPropertyName("store_fakeip")]
     public bool StoreFakeip { get; set; } = true;
+
+    [JsonPropertyName("store_dns")]
+    public bool StoreDns { get; set; } = true;
+}
+
+public class ServiceConfig
+{
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "api";
+
+    [JsonPropertyName("tag")]
+    public string? Tag { get; set; }
+
+    [JsonPropertyName("listen")]
+    public string Listen { get; set; } = "127.0.0.1";
+
+    [JsonPropertyName("listen_port")]
+    // Serialization default only: real configs inject the dynamically allocated port
+    // (ProfileConfigOptions.ApiPort / ApiPortPlanner). It only materializes when
+    // deserializing a hand-written services entry without listen_port, where the
+    // explicit user value always wins.
+    public int ListenPort { get; set; } = 9090;
+
+    [JsonPropertyName("secret")]
+    public string? Secret { get; set; }
 }
 
 public class ClashApiConfig

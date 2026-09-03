@@ -69,3 +69,8 @@ scripts/appimagetool*.AppImage
 .codex*
 .commandcode
 sing-box-dashboard
+.pi
+
+# Unrelated reference repositories kept in the workspace for study
+STranslate/
+SteamTools/

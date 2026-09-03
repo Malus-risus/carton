@@ -16,6 +16,53 @@ public interface ISingBoxManager
     event EventHandler<string>? ManagerLogReceived;
     event EventHandler<KernelLogEntry>? LogReceived;
 
+    /// <summary>
+    /// Raised when the sing-box kernel resets its log buffer; consumers should clear
+    /// local kernel log buffers to avoid duplicated history replays.
+    /// </summary>
+    event EventHandler? KernelLogsReset;
+
+    /// <summary>Current merged connection list from the SubscribeConnections stream.</summary>
+    ConnectionsSnapshot CurrentConnections { get; }
+
+    /// <summary>Latest groups snapshot from the SubscribeGroups stream.</summary>
+    GroupsSnapshot CurrentGroups { get; }
+
+    /// <summary>Raised after a new connection snapshot was merged from the kernel stream.</summary>
+    event EventHandler<ConnectionsSnapshot>? ConnectionsUpdated;
+
+    /// <summary>Raised after the kernel pushed a new groups snapshot.</summary>
+    event EventHandler<GroupsSnapshot>? GroupsUpdated;
+
+    /// <summary>Raised after the kernel pushed a fresh clash mode (including other clients' changes).</summary>
+    event EventHandler<string>? ClashModeChanged;
+
+    /// <summary>Latest clash mode pushed by the kernel (null before the first snapshot).</summary>
+    string? CurrentClashMode { get; }
+
+    /// <summary>
+    /// Raised when the active kernel was rejected by the version gate (older than
+    /// KernelVersionGuard.MinimumRequiredVersion). Consumers should show a blocking
+    /// dialog directing the user to install a supported kernel.
+    /// </summary>
+    event EventHandler<string>? KernelVersionRejected;
+
+    /// <summary>
+    /// Current daemon apiVersion (0 when unknown). Optional gRPC features are gated on
+    /// this value, mirroring the official dashboard's MIN_API_VERSION table:
+    /// taildrop >= 4, OpenVPN/OpenConnect >= 3.
+    /// </summary>
+    int ApiVersion { get; }
+
+    /// <summary>Whether the daemon API supports the given feature at its current apiVersion.</summary>
+    bool SupportsApiFeature(string feature);
+
+    /// <summary>
+    /// Configuration deprecation warnings reported by the running kernel
+    /// (empty when none or unavailable).
+    /// </summary>
+    Task<IReadOnlyList<DeprecatedConfigWarning>> GetDeprecatedWarningsAsync();
+
     ServiceState State { get; }
     bool IsRunning { get; }
 
@@ -23,11 +70,11 @@ public interface ISingBoxManager
     Task<bool> StartAsync(string configPath);
     Task<(bool Success, string Message)> CheckConfigAsync(string configContent);
     Task StopAsync();
-    Task ReloadAsync();
     Task<ApiModeConfigSnapshot?> GetModeConfigAsync();
     Task<bool> SetModeAsync(string mode);
     Task<List<OutboundGroup>> GetOutboundGroupsAsync();
     Task SelectOutboundAsync(string groupTag, string outboundTag);
+    Task SetGroupExpandAsync(string groupTag, bool isExpand);
     Task<Dictionary<string, int>> RunGroupDelayTestAsync(string groupTag, string? testUrl = null, int timeoutMs = 5000);
     Task<Dictionary<string, int>> RunOutboundDelayTestsAsync(IEnumerable<string> outboundTags, string? testUrl = null, int timeoutMs = 5000);
     long? GetRunningProcessMemoryBytes();
@@ -65,8 +112,7 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
     private long _windowsStartupLogSequence;
     private bool _reportedWindowsStartupLogGap;
     private Task? _logMonitorTask;
-    private Task? _trafficMonitorTask;
-    private Task? _memoryMonitorTask;
+    private Task? _statusMonitorTask;
     private CancellationTokenSource? _monitorCancellation;
     private IntPtr _windowsJobHandle = IntPtr.Zero;
     private string? _windowsElevatedHelperToken;
@@ -82,6 +128,12 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
     public event EventHandler<long>? MemoryUpdated;
     public event EventHandler<string>? ManagerLogReceived;
     public event EventHandler<KernelLogEntry>? LogReceived;
+
+    /// <summary>
+    /// Raised when the kernel resets its log buffer (gRPC SubscribeLog reset flag).
+    /// Consumers should clear local kernel log buffers to avoid duplicated history replays.
+    /// </summary>
+    public event EventHandler? KernelLogsReset;
 
     public ServiceState State => _state;
     public bool IsRunning => _state.Status == ServiceStatus.Running;
@@ -127,6 +179,18 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
                 _state.StartTime ??= DateTime.Now;
                 UpdateStatus(ServiceStatus.Running);
                 LogManager("[INFO] Detected existing sing-box instance, synchronized running state");
+            }
+
+            // Refresh the runtime kernel version + apiVersion from the daemon API:
+            // enables capability gating (SupportsApiFeature) even for externally
+            // started kernels whose binary path we never probed.
+            if (CreateApiClient() is SingBoxGrpcApiClient { } grpcClient)
+            {
+                var serverVersion = await grpcClient.GetServerVersionAsync();
+                if (serverVersion is { } info && !string.IsNullOrWhiteSpace(info.Version))
+                {
+                    CartonApplicationInfo.SetSingBoxVersion(info.Version);
+                }
             }
 
             if (!_elevatedPid.HasValue)
@@ -195,6 +259,20 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
         {
             var error = $"sing-box binary not found at: {_singBoxPath}";
             LogManager($"[ERROR] {error}");
+            SetError(error);
+            return false;
+        }
+
+        // The gRPC API client hard-requires sing-box >= 1.14.0: the runtime config now
+        // injects `services: [{type: api}]` and `cache_file.store_dns`, which older
+        // kernels reject with a FATAL "unknown field" at startup. Fail fast with a
+        // clear message instead of a cryptic config decode error.
+        if (!await IsKernelSupportedAsync())
+        {
+            var rawVersion = await GetKernelVersionAsync();
+            var error = KernelVersionGuard.BuildUnsupportedMessage(rawVersion);
+            LogManager($"[ERROR] {error}");
+            KernelVersionRejected?.Invoke(this, error);
             SetError(error);
             return false;
         }
@@ -564,32 +642,54 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
         _systemProxyEnabled = enabled;
     }
 
-    public async Task ReloadAsync()
+    private async Task<bool> IsKernelSupportedAsync()
     {
-        if (_state.Status != ServiceStatus.Running)
-        {
-            return;
-        }
-
         try
         {
-            var response = await _httpClient.PutAsync($"{_apiAddress}/configs", new StringContent(""));
-            response.EnsureSuccessStatusCode();
-        }
-        catch
-        {
-        }
-
-        try
-        {
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            var version = await GetKernelVersionAsync();
+            if (string.IsNullOrWhiteSpace(version))
             {
-                TryShutdownWindowsHelperWithoutThrow();
+                // Version probe failed; assume supported so we do not block the user
+                // behind a false negative (the kernel will fail loudly if it is too old).
+                return true;
             }
+
+            CartonApplicationInfo.SetSingBoxVersion(version);
+            return KernelVersionGuard.IsSupported(version);
         }
         catch
         {
+            return true;
         }
+    }
+
+    private async Task<string?> GetKernelVersionAsync()
+    {
+        using var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = _singBoxPath,
+                Arguments = "version",
+                WorkingDirectory = _workingDirectory,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8
+            }
+        };
+        ApplyLinuxLibrarySearchPath(process.StartInfo);
+
+        if (!process.Start())
+        {
+            return null;
+        }
+
+        var stdout = await process.StandardOutput.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        return stdout;
     }
 
     private void UpdateStatus(ServiceStatus status)
@@ -597,6 +697,7 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
         if (status != ServiceStatus.Running)
         {
             CancelRuntimeMonitors();
+            ResetStreamingSnapshots();
         }
 
         _state.Status = status;
@@ -715,6 +816,15 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
         while (_errorOutput.Count > MaxErrorOutputLines && _errorOutput.TryDequeue(out _))
         {
         }
+    }
+
+    /// <summary>
+    /// Drops buffered kernel diagnostic lines. Called when the kernel resets its
+    /// log buffer and replays its saved history, so diagnostics are not duplicated.
+    /// </summary>
+    internal void ClearKernelErrorOutput()
+    {
+        _errorOutput.Clear();
     }
 
     private static bool IsRuntimeDiagnosticLevel(string level)
@@ -934,6 +1044,8 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
         CancelRuntimeMonitors();
         _monitorCancellation?.Dispose();
         _monitorCancellation = null;
+        // Release the shared gRPC client (and its HTTP/2 channel) once the manager goes away.
+        SingBoxApiClientFactory.Reset();
 
 
         if (_windowsJobHandle != IntPtr.Zero)

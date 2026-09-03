@@ -29,6 +29,7 @@ public partial class LogsViewModel : PageViewModelBase, IDisposable
     private readonly List<LogEntryRecord> _snapshotBuffer = new(1024);
     private bool _hasAppliedFilterState;
     private long _lastAppliedSequence;
+    private long _lastAppliedEpoch;
     private string _appliedSelectedLevel = "All";
     private LogSourceFilter _appliedSourceFilter = LogSourceFilter.All;
     private string _appliedSearchText = string.Empty;
@@ -288,6 +289,12 @@ public partial class LogsViewModel : PageViewModelBase, IDisposable
         }
 
         _logStore.CopySnapshotTo(_snapshotBuffer);
+        // Structural resets (kernel log replay) renumber/reorder the buffer: detect the
+        // epoch bump and force a full rebuild so replayed history is not appended on
+        // top of stale rows.
+        var resetEpoch = _logStore.ResetEpoch;
+        var epochChanged = resetEpoch != _lastAppliedEpoch;
+        _lastAppliedEpoch = resetEpoch;
         var selectedLevel = SelectedLevel;
         var selectedFilter = SelectedSourceFilter?.Filter ?? LogSourceFilter.All;
         var searchText = SearchText;
@@ -300,6 +307,7 @@ public partial class LogsViewModel : PageViewModelBase, IDisposable
 
         var filterStateChanged =
             !_hasAppliedFilterState ||
+            epochChanged ||
             latestSequence < _lastAppliedSequence ||
             !string.Equals(_appliedSelectedLevel, selectedLevel, StringComparison.Ordinal) ||
             _appliedSourceFilter != selectedFilter ||

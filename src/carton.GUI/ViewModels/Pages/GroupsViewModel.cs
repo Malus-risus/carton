@@ -29,12 +29,11 @@ public partial class GroupsViewModel : PageViewModelBase
     private readonly HashSet<string> _testingOutboundTags = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, (int Version, IReadOnlyList<OutboundCacheSnapshot> Items)> _collapsedPreviewCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, GroupMenuSnapshot> _trayGroupLookupBuffer = new(StringComparer.OrdinalIgnoreCase);
-    private readonly DispatcherTimer _urlTestRefreshTimer;
+
     private IReadOnlyList<GroupCacheSnapshot> _cachedGroups = Array.Empty<GroupCacheSnapshot>();
     private DateTimeOffset? _lastCacheRefreshAt;
     private DateTimeOffset? _lastNavigationApiRefreshAt;
     private string? _expandedGroupName;
-    private bool _isRefreshingUrlTestGroups;
     private bool _isRefreshingGroupsOnNavigation;
     private bool _isPageActive;
     private bool _isWindowVisible = true;
@@ -63,17 +62,16 @@ public partial class GroupsViewModel : PageViewModelBase
     {
         InitializePageMetadata("Group", "Navigation.Groups", "Groups");
         _clashConfigCache = ClashConfigCacheService.Instance;
-        _urlTestRefreshTimer = new DispatcherTimer
-        {
-            Interval = TimeSpan.FromSeconds(2.5f)
-        };
-        _urlTestRefreshTimer.Tick += OnUrlTestRefreshTimerTick;
     }
 
     public GroupsViewModel(ISingBoxManager singBoxManager) : this()
     {
         _singBoxManager = singBoxManager;
         _singBoxManager.StatusChanged += OnServiceStatusChanged;
+        // Event driven: the manager keeps a long-lived SubscribeGroups stream and the
+        // kernel pushes a fresh snapshot on every url test history / selection change -
+        // the 2.5s polling timer is no longer needed.
+        _singBoxManager.GroupsUpdated += OnGroupsSnapshotUpdated;
     }
 
     public GroupsViewModel(ISingBoxManager singBoxManager, IPreferencesService preferencesService) : this(singBoxManager)
@@ -188,7 +186,7 @@ public partial class GroupsViewModel : PageViewModelBase
                 return;
             }
 
-            var groups = await _singBoxManager.GetOutboundGroupsAsync();
+            var groups = await GetGroupsForReadAsync();
             var clashConfig = _clashConfigCache.Current;
             var filteredGroups = new List<OutboundGroup>(groups.Count);
             for (var i = 0; i < groups.Count; i++)
@@ -224,7 +222,6 @@ public partial class GroupsViewModel : PageViewModelBase
             Dispatcher.UIThread.Post(() => TestCurrentGroupCommand.NotifyCanExecuteChanged());
             Dispatcher.UIThread.Post(() => TestGroupCardCommand.NotifyCanExecuteChanged());
             UpdateUrlTestRefreshState();
-            _ = RefreshUrlTestGroupsAsync();
         }
         catch (Exception ex)
         {
@@ -327,6 +324,26 @@ public partial class GroupsViewModel : PageViewModelBase
         }
     }
 
+    /// <summary>
+    /// Reads the requested groups from the live groups snapshot (fed by the
+    /// SubscribeGroups stream) - falls back to a one-shot API fetch while the
+    /// stream has not delivered a snapshot yet, or when the cached snapshot went
+    /// stale (stream reconnecting): serving hours-old rows silently is worse than
+    /// a single on-demand fetch.
+    /// </summary>
+    private async Task<List<OutboundGroup>> GetGroupsForReadAsync()
+    {
+        var snapshot = _singBoxManager?.CurrentGroups;
+        if (snapshot is { Groups.Count: > 0 } fresh && fresh.IsFresh(TimeSpan.FromSeconds(10)))
+        {
+            return fresh.Groups.ToList();
+        }
+
+        return _singBoxManager == null
+            ? new List<OutboundGroup>()
+            : await _singBoxManager.GetOutboundGroupsAsync();
+    }
+
     private async Task<Dictionary<string, string>> GetGroupSelectionSnapshotAsync(IReadOnlyList<string> groupNames)
     {
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -336,7 +353,7 @@ public partial class GroupsViewModel : PageViewModelBase
         }
 
         var groupNameSet = CreateTagSet(groupNames);
-        var groups = await _singBoxManager.GetOutboundGroupsAsync();
+        var groups = await GetGroupsForReadAsync();
         for (var i = 0; i < groups.Count; i++)
         {
             var group = groups[i];
@@ -629,7 +646,7 @@ public partial class GroupsViewModel : PageViewModelBase
             return;
         }
 
-        var connections = await _singBoxManager.GetConnectionsAsync();
+        var connections = _singBoxManager.CurrentConnections.ActiveConnections;
         var affectedConnections = new List<ConnectionInfo>();
         for (int i = 0; i < connections.Count; i++)
         {
@@ -697,7 +714,7 @@ public partial class GroupsViewModel : PageViewModelBase
             return;
         }
 
-        var groups = await _singBoxManager.GetOutboundGroupsAsync();
+        var groups = await GetGroupsForReadAsync();
         var groupLookup = new Dictionary<string, OutboundGroup>(groups.Count, StringComparer.OrdinalIgnoreCase);
         for (var i = 0; i < groups.Count; i++)
         {
@@ -811,50 +828,49 @@ public partial class GroupsViewModel : PageViewModelBase
         }
     }
 
-    private void OnUrlTestRefreshTimerTick(object? sender, EventArgs e)
+    /// <summary>
+    /// Kernel pushed a fresh groups snapshot (url test history / selection change).
+    /// Merge it into the view while the page is active.
+    /// </summary>
+    private void OnGroupsSnapshotUpdated(object? sender, GroupsSnapshot snapshot)
     {
-        _ = RefreshUrlTestGroupsAsync();
+        if (!_isPageActive || !_isWindowVisible || _singBoxManager?.IsRunning != true)
+        {
+            return;
+        }
+
+        _ = ApplyGroupsSnapshotAsync(snapshot);
+    }
+
+    private async Task ApplyGroupsSnapshotAsync(GroupsSnapshot snapshot)
+    {
+        var clashConfig = _clashConfigCache.Current;
+        var groupLookup = new Dictionary<string, OutboundGroup>(snapshot.Groups.Count, StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < snapshot.Groups.Count; i++)
+        {
+            var group = snapshot.Groups[i];
+            if (ShouldDisplayGroup(group, clashConfig))
+            {
+                groupLookup[group.Tag] = group;
+            }
+        }
+
+        if (groupLookup.Count == 0)
+        {
+            return;
+        }
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            MergeUpdatedGroupsIntoCache(groupLookup, CreateTagSet(groupLookup.Keys));
+            RecalculateEffectiveDelays();
+            _lastCacheRefreshAt = DateTimeOffset.UtcNow;
+        });
     }
 
     private void UpdateUrlTestRefreshState()
     {
-        if (_singBoxManager?.IsRunning == true && _isPageActive && _isWindowVisible)
-        {
-            _urlTestRefreshTimer.Start();
-            return;
-        }
-
-        _urlTestRefreshTimer.Stop();
-    }
-
-    private async Task RefreshUrlTestGroupsAsync()
-    {
-        if (_singBoxManager?.IsRunning != true || !_isPageActive || !_isWindowVisible || _isRefreshingUrlTestGroups)
-        {
-            return;
-        }
-
-        _isRefreshingUrlTestGroups = true;
-        try
-        {
-            var urlTestGroupNames = await Dispatcher.UIThread.InvokeAsync(GetUrlTestGroupNames);
-            if (urlTestGroupNames.Count == 0)
-            {
-                return;
-            }
-
-            try
-            {
-                await RefreshGroupsSnapshotAsync(urlTestGroupNames);
-            }
-            catch
-            {
-            }
-        }
-        finally
-        {
-            _isRefreshingUrlTestGroups = false;
-        }
+        // Streaming pushes replace the polling timer; nothing to start or stop here.
     }
 
     private async Task TestOutboundAsync(OutboundItemViewModel item)
@@ -944,6 +960,13 @@ public partial class GroupsViewModel : PageViewModelBase
         group.Items = _expandedProxyItems;
         group.IsExpanded = true;
         _expandedGroupName = group.Name;
+
+        // Persist server-side so the expansion survives restarts and syncs to
+        // other control clients (sing-box SetGroupExpand, stored in cache.db).
+        if (_singBoxManager is { IsRunning: true })
+        {
+            _ = _singBoxManager.SetGroupExpandAsync(group.Name, true);
+        }
     }
 
     private void CollapseExpandedGroup()
@@ -966,7 +989,13 @@ public partial class GroupsViewModel : PageViewModelBase
         _expandedProxyItems.Clear();
         if (clearExpandedGroupName)
         {
+            var collapsedGroupName = _expandedGroupName;
             _expandedGroupName = null;
+
+            if (!string.IsNullOrWhiteSpace(collapsedGroupName) && _singBoxManager is { IsRunning: true })
+            {
+                _ = _singBoxManager.SetGroupExpandAsync(collapsedGroupName, false);
+            }
         }
     }
 
@@ -1318,21 +1347,6 @@ public partial class GroupsViewModel : PageViewModelBase
         }
 
         return itemLookup;
-    }
-
-    private List<string> GetUrlTestGroupNames()
-    {
-        var result = new List<string>();
-        for (var i = 0; i < _cachedGroups.Count; i++)
-        {
-            var group = _cachedGroups[i];
-            if (string.Equals(group.Type, "URLTest", StringComparison.OrdinalIgnoreCase))
-            {
-                result.Add(group.Name);
-            }
-        }
-
-        return result;
     }
 
     private static Dictionary<string, int> CreateResolvedDelayLookup(IReadOnlyList<OutboundGroup> groups)

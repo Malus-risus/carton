@@ -16,6 +16,7 @@ public sealed class LogStore
     private readonly object _timeSyncRoot = new();
     private int _pendingEntriesChanged;
     private long _nextSequence;
+    private long _resetEpoch;
     private long _cachedTimeSecond = -1;
     private string _cachedTimeText = string.Empty;
 
@@ -67,6 +68,41 @@ public sealed class LogStore
         }
 
         RaiseEntriesChanged();
+    }
+
+    /// <summary>
+    /// Removes all buffered entries from the given source, e.g. when the sing-box
+    /// kernel resets its log buffer and replays its saved history.
+    /// </summary>
+    public void RemoveSource(LogSource source)
+    {
+        lock (_syncRoot)
+        {
+            _entries.RemoveAll(entry => entry.Source != source);
+            // Bump the reset epoch: sequence-based incremental consumers see a new
+            // epoch and rebuild their view from the snapshot instead of blindly
+            // appending the replayed history on top of stale rows.
+            _resetEpoch++;
+        }
+
+        RaiseEntriesChanged();
+    }
+
+    /// <summary>
+    /// Incremented every time the buffer is structurally reset (RemoveSource);
+    /// consumers doing sequence-based incremental updates must fully rebuild when
+    /// this changes. The global sequence itself never rewinds (post-reset entries
+    // keep getting higher numbers than anything applied before).
+    /// </summary>
+    public long ResetEpoch
+    {
+        get
+        {
+            lock (_syncRoot)
+            {
+                return _resetEpoch;
+            }
+        }
     }
 
     private LogEntryRecord CreateEntry(string message, LogSource source)
@@ -189,6 +225,27 @@ internal sealed class LogRingBuffer
         for (var i = 0; i < _count; i++)
         {
             destination.Add(_buffer[(_start + i) % _buffer.Length]);
+        }
+    }
+
+    public void RemoveAll(Predicate<LogEntryRecord> match)
+    {
+        var kept = new List<LogEntryRecord>(Math.Max(1, _count));
+        for (var i = 0; i < _count; i++)
+        {
+            var entry = _buffer[(_start + i) % _buffer.Length];
+            if (!match(entry))
+            {
+                kept.Add(entry);
+            }
+        }
+
+        _start = 0;
+        _count = 0;
+        for (var i = 0; i < kept.Count && i < _buffer.Length; i++)
+        {
+            _buffer[i] = kept[i];
+            _count++;
         }
     }
 

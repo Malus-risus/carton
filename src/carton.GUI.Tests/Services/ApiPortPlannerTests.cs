@@ -8,199 +8,68 @@ namespace carton.GUI.Tests.Services;
 public sealed class ApiPortPlannerTests
 {
     [Fact]
-    public void Resolve_ReturnsDefaultPorts_WhenAutomaticDefaultsAreAvailable()
+    public void Resolve_ReturnsDefaultPort_WhenItIsAvailable()
     {
-        var basePort = FindConsecutiveFreePortRange(3);
+        var basePort = FindConsecutiveFreePortRange(2);
 
         var plan = ApiPortPlanner.Resolve(
             basePort,
             basePort + 1,
-            basePort + 2,
-            hasConfiguredClashApiPort: false,
-            configuredClashApiPort: 0,
-            enableNativeApi: true,
             hasConfiguredNativeApiPort: false,
             configuredNativeApiPort: 0);
 
-        Assert.Equal(basePort, plan.ClashApiPort);
-        Assert.Equal(basePort + 1, plan.NativeApiPort);
+        Assert.Equal(basePort, plan.NativeApiPort);
     }
 
     [Fact]
-    public void Resolve_MovesAutomaticClashPort_WhenDefaultClashPortIsOccupied()
+    public void Resolve_MovesNativePort_WhenDefaultPortIsOccupied()
     {
         var basePort = FindConsecutiveFreePortRange(4);
-        using var occupiedClash = ReservePort(basePort);
+        using var occupiedDefault = ReservePort(basePort);
+        using var occupiedNext = ReservePort(basePort + 1);
 
         var plan = ApiPortPlanner.Resolve(
             basePort,
             basePort + 2,
-            basePort + 3,
-            hasConfiguredClashApiPort: false,
-            configuredClashApiPort: 0,
-            enableNativeApi: true,
             hasConfiguredNativeApiPort: false,
             configuredNativeApiPort: 0);
 
-        Assert.Equal(basePort + 1, plan.ClashApiPort);
-        Assert.Equal(basePort + 2, plan.NativeApiPort);
-    }
-
-    [Fact]
-    public void Resolve_MovesAutomaticNativePort_WhenDefaultNativePortIsOccupied()
-    {
-        var basePort = FindConsecutiveFreePortRange(4);
-        using var occupiedNative = ReservePort(basePort + 1);
-
-        var plan = ApiPortPlanner.Resolve(
-            basePort,
-            basePort + 1,
-            basePort + 3,
-            hasConfiguredClashApiPort: false,
-            configuredClashApiPort: 0,
-            enableNativeApi: true,
-            hasConfiguredNativeApiPort: false,
-            configuredNativeApiPort: 0);
-
-        Assert.Equal(basePort, plan.ClashApiPort);
-        Assert.Equal(basePort + 2, plan.NativeApiPort);
-    }
-
-    [Fact]
-    public void Resolve_AutomaticPortsAvoidBootstrapPort()
-    {
-        var basePort = FindConsecutiveFreePortRange(4);
-        using var occupiedClash = ReservePort(basePort);
-
-        var plan = ApiPortPlanner.Resolve(
-            basePort,
-            basePort + 3,
-            basePort + 1,
-            hasConfiguredClashApiPort: false,
-            configuredClashApiPort: 0,
-            enableNativeApi: true,
-            hasConfiguredNativeApiPort: false,
-            configuredNativeApiPort: 0);
-
-        Assert.Equal(basePort + 2, plan.ClashApiPort);
+        // Ports 0 and 1 are held and port 2 is the excluded bootstrap port:
+        // the planner must skip all three and return the next candidate. Holding the
+        // ports ourselves keeps the candidate space fully deterministic.
         Assert.Equal(basePort + 3, plan.NativeApiPort);
     }
 
     [Fact]
-    public void Resolve_KeepsConfiguredClashPort_EvenWhenItIsOccupied()
+    public void Resolve_AutomaticPortAvoidsBootstrapPort()
     {
         var basePort = FindConsecutiveFreePortRange(4);
-        using var occupiedConfiguredClash = ReservePort(basePort);
+        using var occupiedDefault = ReservePort(basePort);
+        // Deterministic: bootstrap port is excluded AND its neighbour is held, so the
+        // only valid automatic candidate is basePort + 3.
+        using var occupiedAfterBootstrap = ReservePort(basePort + 2);
 
         var plan = ApiPortPlanner.Resolve(
+            basePort,
             basePort + 1,
-            basePort + 2,
-            basePort + 3,
-            hasConfiguredClashApiPort: true,
-            configuredClashApiPort: basePort,
-            enableNativeApi: true,
             hasConfiguredNativeApiPort: false,
             configuredNativeApiPort: 0);
 
-        Assert.Equal(basePort, plan.ClashApiPort);
-        Assert.Equal(basePort + 2, plan.NativeApiPort);
+        Assert.Equal(basePort + 3, plan.NativeApiPort);
     }
 
     [Fact]
-    public void Resolve_KeepsConfiguredNativePort_EvenWhenItIsOccupied()
-    {
-        var basePort = FindConsecutiveFreePortRange(4);
-        using var occupiedConfiguredNative = ReservePort(basePort);
-
-        var plan = ApiPortPlanner.Resolve(
-            basePort + 1,
-            basePort + 2,
-            basePort + 3,
-            hasConfiguredClashApiPort: false,
-            configuredClashApiPort: 0,
-            enableNativeApi: true,
-            hasConfiguredNativeApiPort: true,
-            configuredNativeApiPort: basePort);
-
-        Assert.Equal(basePort + 1, plan.ClashApiPort);
-        Assert.Equal(basePort, plan.NativeApiPort);
-    }
-
-    [Fact]
-    public void Resolve_KeepsBothConfiguredPorts_EvenWhenTheyAreOccupied()
-    {
-        var basePort = FindConsecutiveFreePortRange(4);
-        using var occupiedConfiguredClash = ReservePort(basePort);
-        using var occupiedConfiguredNative = ReservePort(basePort + 1);
-
-        var plan = ApiPortPlanner.Resolve(
-            basePort + 2,
-            basePort + 3,
-            basePort + 3,
-            hasConfiguredClashApiPort: true,
-            configuredClashApiPort: basePort,
-            enableNativeApi: true,
-            hasConfiguredNativeApiPort: true,
-            configuredNativeApiPort: basePort + 1);
-
-        Assert.Equal(basePort, plan.ClashApiPort);
-        Assert.Equal(basePort + 1, plan.NativeApiPort);
-    }
-
-    [Fact]
-    public void Resolve_KeepsEqualConfiguredPorts_WhenBothPortsAreConfigured()
+    public void Resolve_KeepsConfiguredPort_EvenWhenItIsOccupied()
     {
         var basePort = FindConsecutiveFreePortRange(3);
+        using var occupiedConfigured = ReservePort(basePort);
 
         var plan = ApiPortPlanner.Resolve(
             basePort + 1,
             basePort + 2,
-            basePort + 2,
-            hasConfiguredClashApiPort: true,
-            configuredClashApiPort: basePort,
-            enableNativeApi: true,
             hasConfiguredNativeApiPort: true,
             configuredNativeApiPort: basePort);
 
-        Assert.Equal(basePort, plan.ClashApiPort);
-        Assert.Equal(basePort, plan.NativeApiPort);
-    }
-
-    [Fact]
-    public void Resolve_MovesAutomaticNativePort_WhenConfiguredClashUsesDefaultNativePort()
-    {
-        var basePort = FindConsecutiveFreePortRange(4);
-
-        var plan = ApiPortPlanner.Resolve(
-            basePort,
-            basePort + 1,
-            basePort + 3,
-            hasConfiguredClashApiPort: true,
-            configuredClashApiPort: basePort + 1,
-            enableNativeApi: true,
-            hasConfiguredNativeApiPort: false,
-            configuredNativeApiPort: 0);
-
-        Assert.Equal(basePort + 1, plan.ClashApiPort);
-        Assert.Equal(basePort + 2, plan.NativeApiPort);
-    }
-
-    [Fact]
-    public void Resolve_MovesAutomaticClashPort_WhenConfiguredNativeUsesDefaultClashPort()
-    {
-        var basePort = FindConsecutiveFreePortRange(4);
-
-        var plan = ApiPortPlanner.Resolve(
-            basePort,
-            basePort + 2,
-            basePort + 3,
-            hasConfiguredClashApiPort: false,
-            configuredClashApiPort: 0,
-            enableNativeApi: true,
-            hasConfiguredNativeApiPort: true,
-            configuredNativeApiPort: basePort);
-
-        Assert.Equal(basePort + 1, plan.ClashApiPort);
         Assert.Equal(basePort, plan.NativeApiPort);
     }
 

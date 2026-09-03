@@ -165,7 +165,6 @@
 	<x:String x:Key="Dashboard.Menu.OpenCmd">打开 CMD</x:String>
 	<x:String x:Key="Dashboard.Menu.OpenPs">打开 PowerShell</x:String>
 	<x:String x:Key="Dashboard.Button.OpenWebUi">访问 WebUI</x:String>
-	<x:String x:Key="Dashboard.Menu.OpenClashWebUi">Clash API WebUI</x:String>
 	<x:String x:Key="Dashboard.Menu.OpenSingBoxWebUi">sing-box API WebUI</x:String>
 	<x:String x:Key="Dashboard.Status.OpenWebUiFailed">打开 WebUI 失败</x:String>
   <x:String x:Key="Dashboard.Status.SystemProxyToggleFailed">切换系统代理失败</x:String>
@@ -376,6 +375,9 @@
   <x:String x:Key="Settings.Kernel.CustomInstall.SuccessToast">自定义内核安装完成：{0}</x:String>
 
   <x:String x:Key="Common.Unknown">未知</x:String>
+  <x:String x:Key="Kernel.Unsupported.Title">不支持的 sing-box 版本</x:String>
+  <x:String x:Key="Settings.Kernel.BlockedDialog.Title">不支持的 sing-box 版本</x:String>
+  <x:String x:Key="Common.Ok">确定</x:String>
 	<x:String x:Key="Dashboard.KernelStatus.Title">内核和状态</x:String>
 	<x:String x:Key="Dashboard.KernelStatus.Refresh">刷新延迟测试</x:String>
 	<x:String x:Key="Dashboard.KernelMemory.KernelVersion">内核版本</x:String>

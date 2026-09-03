@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using Grpc.Core;
 using carton.Core.Models;
 using carton.Core.Utilities;
 
@@ -40,17 +41,18 @@ public partial class SingBoxManager
             _logMonitorTask = Task.Run(() => StartLogMonitorAsync(cancellationToken));
         }
 
-        if (replacingCanceledMonitors || _trafficMonitorTask is not { IsCompleted: false })
+        if (replacingCanceledMonitors || _statusMonitorTask is not { IsCompleted: false })
         {
-            _trafficMonitorTask = Task.Run(() => StartTrafficMonitorAsync(cancellationToken));
+            _statusMonitorTask = Task.Run(() => StartStatusMonitorAsync(cancellationToken));
         }
 
-        if (!replacingCanceledMonitors && _memoryMonitorTask is { IsCompleted: false })
+        if (replacingCanceledMonitors ||
+            _connectionsMonitorTask is not { IsCompleted: false } ||
+            _groupsMonitorTask is not { IsCompleted: false } ||
+            _clashModeMonitorTask is not { IsCompleted: false })
         {
-            return;
+            StartStreamingMonitors();
         }
-
-        _memoryMonitorTask = Task.Run(() => StartMemoryMonitorAsync(cancellationToken));
     }
 
     private CancellationToken EnsureRuntimeMonitorCancellationToken()
@@ -85,21 +87,38 @@ public partial class SingBoxManager
         {
             try
             {
-                await foreach (var entry in CreateApiClient().SubscribeLogsAsync(monitorLevel, cancellationToken))
+                var apiClient = CreateApiClient();
+                EventHandler? resetHandler = null;
+                resetHandler = (_, _) =>
                 {
-                    if (_state.Status != ServiceStatus.Running)
+                    // Kernel reset its log buffer: drop buffered diagnostics so the
+                    // history replay below is not duplicated.
+                    ClearKernelErrorOutput();
+                    KernelLogsReset?.Invoke(this, EventArgs.Empty);
+                };
+                apiClient.LogsReset += resetHandler;
+                try
+                {
+                    await foreach (var entry in apiClient.SubscribeLogsAsync(monitorLevel, cancellationToken))
                     {
-                        break;
-                    }
+                        if (_state.Status != ServiceStatus.Running)
+                        {
+                            break;
+                        }
 
-                    StopStartupLogCapture();
-                    consecutiveFailures = 0;
-                    LogKernel(entry);
+                        StopStartupLogCapture();
+                        consecutiveFailures = 0;
+                        LogKernel(entry);
+                    }
+                }
+                finally
+                {
+                    apiClient.LogsReset -= resetHandler;
                 }
 
                 if (_state.Status == ServiceStatus.Running)
                 {
-                    await Task.Delay(500, cancellationToken);
+                    await DelaySafelyAsync(TimeSpan.FromMilliseconds(500), cancellationToken);
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -114,20 +133,29 @@ public partial class SingBoxManager
                     LogManager($"[WARN] Log monitor error: {e.Message}");
                 }
 
-                await Task.Delay(TimeSpan.FromSeconds(Math.Min(5, Math.Max(1, consecutiveFailures))), cancellationToken);
+                await DelaySafelyAsync(TimeSpan.FromSeconds(Math.Min(5, Math.Max(1, consecutiveFailures))), cancellationToken);
             }
         }
     }
 
-    private async Task StartTrafficMonitorAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Single multiplexed SubscribeStatus stream feeding both traffic and memory
+    /// updates. Totals come from the kernel's uplinkTotal/downlinkTotal counters
+    /// (exact even across monitor reconnects); the client-side accumulation is only
+    /// a fallback for kernels that do not report traffic availability.
+    /// </summary>
+    private async Task StartStatusMonitorAsync(CancellationToken cancellationToken)
     {
         var consecutiveFailures = 0;
+        var fallbackTotalUplink = 0L;
+        var fallbackTotalDownlink = 0L;
 
         while (_state.Status == ServiceStatus.Running && !cancellationToken.IsCancellationRequested)
         {
             try
             {
-                await foreach (var traffic in CreateApiClient().SubscribeTrafficAsync(cancellationToken))
+                var apiClient = CreateApiClient();
+                await foreach (var status in apiClient.SubscribeAggregatedStatusAsync(cancellationToken))
                 {
                     if (_state.Status != ServiceStatus.Running)
                     {
@@ -135,73 +163,64 @@ public partial class SingBoxManager
                     }
 
                     consecutiveFailures = 0;
-                    _state.UploadSpeed = traffic.Uplink;
-                    _state.DownloadSpeed = traffic.Downlink;
-                    _state.TotalUpload += traffic.Uplink;
-                    _state.TotalDownload += traffic.Downlink;
-                    TrafficUpdated?.Invoke(this, traffic);
-                }
-
-                if (_state.Status == ServiceStatus.Running)
-                {
-                    await Task.Delay(500, cancellationToken);
-                }
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception e)
-            {
-                consecutiveFailures++;
-                if (consecutiveFailures == 1 || consecutiveFailures % 10 == 0)
-                {
-                    LogManager($"[WARN] Traffic monitor error: {e.Message}");
-                }
-
-                await Task.Delay(TimeSpan.FromSeconds(Math.Min(5, Math.Max(1, consecutiveFailures))), cancellationToken);
-            }
-        }
-    }
-
-    private async Task StartMemoryMonitorAsync(CancellationToken cancellationToken)
-    {
-        var consecutiveFailures = 0;
-
-        while (_state.Status == ServiceStatus.Running && !cancellationToken.IsCancellationRequested)
-        {
-            try
-            {
-                await foreach (var memoryInUse in CreateApiClient().SubscribeMemoryAsync(cancellationToken))
-                {
-                    if (_state.Status != ServiceStatus.Running)
+                    _state.UploadSpeed = status.Uplink;
+                    _state.DownloadSpeed = status.Downlink;
+                    if (status.TrafficAvailable)
                     {
-                        break;
+                        _state.TotalUpload = status.UplinkTotal;
+                        _state.TotalDownload = status.DownlinkTotal;
+                    }
+                    else
+                    {
+                        // No kernel-tracked totals: accumulate per-interval deltas locally.
+                        fallbackTotalUplink += status.Uplink;
+                        fallbackTotalDownlink += status.Downlink;
+                        _state.TotalUpload = fallbackTotalUplink;
+                        _state.TotalDownload = fallbackTotalDownlink;
                     }
 
-                    consecutiveFailures = 0;
-                    _state.MemoryInUse = memoryInUse;
-                    MemoryUpdated?.Invoke(this, memoryInUse);
+                    TrafficUpdated?.Invoke(this, new TrafficInfo
+                    {
+                        Uplink = status.Uplink,
+                        Downlink = status.Downlink
+                    });
+
+                    if (_state.MemoryInUse != (long)status.Memory)
+                    {
+                        // Only fire on actual changes; a constant memory read stays quiet.
+                        _state.MemoryInUse = (long)status.Memory;
+                        MemoryUpdated?.Invoke(this, (long)status.Memory);
+                    }
                 }
 
                 if (_state.Status == ServiceStatus.Running)
                 {
-                    await Task.Delay(500, cancellationToken);
+                    await DelaySafelyAsync(TimeSpan.FromMilliseconds(500), cancellationToken);
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 break;
             }
+            catch (RpcException e)
+            {
+                consecutiveFailures++;
+                if (consecutiveFailures == 1 || consecutiveFailures % 10 == 0)
+                {
+                    LogManager($"[WARN] Status monitor RPC error: {e.StatusCode} {e.Message}");
+                }
+
+                await DelaySafelyAsync(TimeSpan.FromSeconds(Math.Min(5, consecutiveFailures)), cancellationToken);
+            }
             catch (Exception e)
             {
                 consecutiveFailures++;
                 if (consecutiveFailures == 1 || consecutiveFailures % 10 == 0)
                 {
-                    LogManager($"[WARN] Memory monitor error: {e.Message}");
+                    LogManager($"[WARN] Status monitor error: {e.Message}");
                 }
 
-                await Task.Delay(TimeSpan.FromSeconds(Math.Min(5, Math.Max(1, consecutiveFailures))), cancellationToken);
+                await DelaySafelyAsync(TimeSpan.FromSeconds(Math.Min(5, Math.Max(1, consecutiveFailures))), cancellationToken);
             }
         }
     }

@@ -146,14 +146,23 @@ public class ConfigManager : IConfigManager
     ""final"": ""proxy"",
     ""auto_detect_interface"": true
   },
+  ""services"": [
+    {
+      ""type"": ""api"",
+      ""tag"": ""carton-api"",
+      ""listen"": ""127.0.0.1"",
+      ""listen_port"": 9090
+    }
+  ],
   ""experimental"": {
     ""cache_file"": {
       ""enabled"": true,
       ""path"": ""cache.db"",
-      ""store_fakeip"": true
+      ""store_fakeip"": true,
+      ""store_dns"": true
     },
     ""clash_api"": {
-      ""external_controller"": ""127.0.0.1:9090"",
+      ""external_controller"": """",
       ""secret"": """",
       ""default_mode"": ""rule""
     }
@@ -312,6 +321,16 @@ public class ConfigManager : IConfigManager
                 Final = "proxy",
                 AutoDetectInterface = true
             },
+            Services = new List<ServiceConfig>
+            {
+                new()
+                {
+                    Type = "api",
+                    Tag = "carton-api",
+                    Listen = "127.0.0.1",
+                    ListenPort = options.ApiPort
+                }
+            },
             Experimental = new ExperimentalConfig
             {
                 CacheFile = new CacheFileConfig
@@ -321,7 +340,9 @@ public class ConfigManager : IConfigManager
                 },
                 ClashApi = new ClashApiConfig
                 {
-                    ExternalController = $"127.0.0.1:{options.ApiPort}",
+                    // Empty external_controller keeps the clash server (mode backend) alive
+                    // without opening the legacy REST listener.
+                    ExternalController = "",
                     Secret = "",
                     DefaultMode = "rule"
                 }

@@ -545,7 +545,66 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
         {
             UpdateStatus = status;
+
+            // The hard version gate rejects old kernels with these prefixes: surface
+            // them as a blocking dialog so the user clearly understands the install
+            // was refused (not merely failed).
+            if (status.StartsWith("Install blocked:", StringComparison.OrdinalIgnoreCase) ||
+                status.StartsWith("Download blocked:", StringComparison.OrdinalIgnoreCase))
+            {
+                _ = ShowKernelBlockedDialogAsync(status);
+            }
         });
+    }
+
+    private async Task ShowKernelBlockedDialogAsync(string message)
+    {
+        var desktop = Avalonia.Application.Current?.ApplicationLifetime as Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime;
+        var owner = desktop?.MainWindow;
+        if (owner == null)
+        {
+            return;
+        }
+
+        if (owner.IsVisible == false)
+        {
+            // Dialogs cannot be shown over a hidden window (ShowDialog throws); this
+            // can only happen for tray-triggered installs while the window is hidden.
+            return;
+        }
+
+        var dialog = new Window
+        {
+            Width = 460,
+            SizeToContent = SizeToContent.Height,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Title = GetString("Settings.Kernel.BlockedDialog.Title", "Unsupported sing-box Version"),
+            ShowInTaskbar = false
+        };
+
+        var messageBlock = new TextBlock
+        {
+            Text = message,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 16)
+        };
+
+        var okButton = new Button
+        {
+            Content = GetString("Common.Ok", "OK"),
+            MinWidth = 110,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right
+        };
+        okButton.Click += (_, _) => dialog.Close();
+
+        dialog.Content = new StackPanel
+        {
+            Margin = new Thickness(24),
+            Children = { messageBlock, okButton }
+        };
+
+        await dialog.ShowDialog(owner);
     }
 
     public async Task RefreshKernelInfoAsync()

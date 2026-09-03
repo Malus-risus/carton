@@ -17,9 +17,6 @@ public static class HttpClientFactory
     public static string LocalApiAddress { get; private set; } = string.Empty;
     public static int LocalApiPort { get; private set; }
     public static string? LocalApiSecret { get; private set; }
-    public static string LocalClashApiAddress { get; private set; } = string.Empty;
-    public static int LocalClashApiPort { get; private set; }
-    public static string? LocalClashApiSecret { get; private set; }
     public static string LocalNativeApiAddress { get; private set; } = string.Empty;
     public static int LocalNativeApiPort { get; private set; }
     public static string? LocalNativeApiSecret { get; private set; }
@@ -49,12 +46,16 @@ public static class HttpClientFactory
     /// </summary>
     public static HttpClient LocalApi => _localApi;
 
+    /// <summary>
+    /// Points the shared local API client at a sing-box native API service (h2c gRPC
+    /// endpoint). The legacy Clash REST front is gone since the 1.14 migration; a null/
+    /// empty/whitespace secret simply omits the Authorization header (kernels configured
+    /// without a secret accept anonymous requests).
+    /// </summary>
     public static void UpdateLocalApi(
         string host,
         int port,
-        string? secret,
-        int? clashApiPort = null,
-        string? clashApiSecret = null)
+        string? secret)
     {
         var client = CreateLoopbackClient(TimeSpan.FromSeconds(5));
         client.BaseAddress = new Uri($"http://{host}:{port}/");
@@ -64,8 +65,6 @@ public static class HttpClientFactory
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", secret);
         }
 
-        var effectiveClashPort = clashApiPort.GetValueOrDefault(port);
-        var effectiveClashSecret = clashApiSecret ?? secret;
         HttpClient? oldClient;
         lock (LocalApiSyncRoot)
         {
@@ -73,9 +72,6 @@ public static class HttpClientFactory
             LocalApiAddress = $"http://{host}:{port}";
             LocalApiPort = port;
             LocalApiSecret = string.IsNullOrWhiteSpace(secret) ? null : secret;
-            LocalClashApiAddress = $"http://{host}:{effectiveClashPort}";
-            LocalClashApiPort = effectiveClashPort;
-            LocalClashApiSecret = string.IsNullOrWhiteSpace(effectiveClashSecret) ? null : effectiveClashSecret;
             _localApi = client;
         }
 

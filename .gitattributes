@@ -1,0 +1,29 @@
+# Normalize text-file line endings on commit (LF in the repo); working tree keeps
+# native endings. Prevents whole-file diff noise when editors rewrite CRLF<->LF.
+* text=auto
+
+# C# / XAML / docs
+*.cs text
+*.axaml text
+*.csproj text
+*.slnx text
+*.md text diff=markdown
+*.proto text
+*.json text
+*.yml text
+*.sh text
+
+# Windows-specific
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary assets
+*.png binary
+*.jpg binary
+*.ico binary
+*.exe binary
+*.dll binary
+*.ttf binary
+*.zip binary
+*.7z binary

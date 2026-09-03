@@ -334,6 +334,13 @@ public class KernelManager : IKernelManager
                     return null;
                 }
 
+                // Hard version gate before wasting bandwidth on an unsupported kernel.
+                if (!KernelVersionGuard.IsSupported(ExtractRef1ndVersion(ref1ndTag), allowUnknown: true))
+                {
+                    StatusChanged?.Invoke(this, $"Download blocked: {KernelVersionGuard.BuildUnsupportedMessage(ref1ndTag)}");
+                    return null;
+                }
+
                 var channelLabel = GetRef1ndChannelLabel(mirror);
                 var tempFile = await DownloadRef1ndPackageAsync(platform, ref1ndTag, mirror, channelLabel);
                 if (string.IsNullOrWhiteSpace(tempFile))
@@ -358,6 +365,13 @@ public class KernelManager : IKernelManager
             if (string.IsNullOrEmpty(version))
             {
                 StatusChanged?.Invoke(this, "Failed to get latest version");
+                return null;
+            }
+
+            // Hard version gate before wasting bandwidth on an unsupported kernel.
+            if (!KernelVersionGuard.IsSupported(version, allowUnknown: true))
+            {
+                StatusChanged?.Invoke(this, $"Download blocked: {KernelVersionGuard.BuildUnsupportedMessage(version)}");
                 return null;
             }
 
@@ -406,6 +420,15 @@ public class KernelManager : IKernelManager
                 return false;
             }
 
+            // Hard version gate: refuse to install kernels older than the minimum
+            // supported version (extract the candidate binary and probe it first).
+            var gateError = await ValidatePackageVersionAsync(package);
+            if (gateError != null)
+            {
+                StatusChanged?.Invoke(this, gateError);
+                return false;
+            }
+
             var platform = PlatformInfo.Current;
             var versionLabel = string.IsNullOrWhiteSpace(package.VersionLabel) ? "package" : package.VersionLabel;
             var isDirectExecutable = platform.OS == "windows" &&
@@ -448,6 +471,90 @@ public class KernelManager : IKernelManager
 
     private static string GetRef1ndChannelLabel(DownloadMirror mirror)
         => mirror == DownloadMirror.Ref1ndTest ? "test" : "stable";
+
+    /// <summary>Strips ref1nd channel suffixes so the version gate sees the plain semver.</summary>
+    private static string? ExtractRef1ndVersion(string? ref1ndTag)
+    {
+        if (string.IsNullOrWhiteSpace(ref1ndTag))
+        {
+            return null;
+        }
+
+        var dashIndex = ref1ndTag.IndexOf('-');
+        return dashIndex > 0 ? ref1ndTag[..dashIndex] : ref1ndTag;
+    }
+
+    /// <summary>
+    /// Probes the package binary for its version and returns a rejection message when
+    /// it is older than <see cref="KernelVersionGuard.MinimumRequiredVersion"/>; null
+    /// when the package is supported or its version could not be determined (never
+    /// block an otherwise valid install on a probe failure).
+    /// </summary>
+    private async Task<string?> ValidatePackageVersionAsync(KernelPackageDownloadResult package)
+    {
+        var rawVersion = await TryProbePackageVersionAsync(package);
+
+        // An unknown probe result (null: unparseable output, missing binary, extraction
+        // failure) must never block an otherwise valid package - the start-time gate
+        // probes again and rejects old kernels with a clear dialog.
+        return KernelVersionGuard.IsSupported(rawVersion, allowUnknown: true)
+            ? null
+            : $"Install blocked: {KernelVersionGuard.BuildUnsupportedMessage(rawVersion)}";
+    }
+
+    /// <summary>
+    /// Probes the package's kernel binary version without installing it: direct
+    /// executables are probed in place, archives are extracted to a throwaway
+    /// directory first. Returns null when the version cannot be determined.
+    /// </summary>
+    private async Task<string?> TryProbePackageVersionAsync(KernelPackageDownloadResult package)
+    {
+        try
+        {
+            var platform = PlatformInfo.Current;
+            var isDirectExecutable = platform.OS == "windows" &&
+                                     string.Equals(Path.GetExtension(package.TempFilePath), ".exe", StringComparison.OrdinalIgnoreCase);
+            if (isDirectExecutable)
+            {
+                return await GetInstalledVersionAsync(package.TempFilePath);
+            }
+
+            var probeDirectory = Path.Combine(Path.GetTempPath(), $"carton-kernel-probe-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(probeDirectory);
+            try
+            {
+                await ExtractArchiveAsync(package.TempFilePath, probeDirectory);
+                var probeBinary = Directory.EnumerateFiles(probeDirectory, "sing-box*", SearchOption.AllDirectories)
+                    .FirstOrDefault(path => !path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) && !path.EndsWith(".txt", StringComparison.OrdinalIgnoreCase));
+                if (probeBinary == null)
+                {
+                    return null;
+                }
+
+                if (!OperatingSystem.IsWindows())
+                {
+                    Process.Start("chmod", $"+x \"{probeBinary}\"")?.WaitForExit();
+                }
+
+                return await GetInstalledVersionAsync(probeBinary);
+            }
+            finally
+            {
+                try
+                {
+                    Directory.Delete(probeDirectory, recursive: true);
+                }
+                catch
+                {
+                }
+            }
+        }
+        catch
+        {
+            // Probe failures resolve to "unknown" - see the caller for why that never blocks.
+            return null;
+        }
+    }
 
     private static bool IsOfficialPreReleaseMirror(DownloadMirror mirror)
         => mirror is DownloadMirror.GitHubPreRelease or DownloadMirror.GhProxyPreRelease;
@@ -799,6 +906,16 @@ public class KernelManager : IKernelManager
             }
 
             StatusChanged?.Invoke(this, "Installing custom kernel...");
+
+            // Hard version gate: refuse custom kernels older than the minimum supported
+            // version, before anything is replaced.
+            var rawSourceVersion = await GetInstalledVersionAsync(sourcePath);
+            if (!KernelVersionGuard.IsSupported(rawSourceVersion, allowUnknown: true))
+            {
+                var blocked = $"Install blocked: {KernelVersionGuard.BuildUnsupportedMessage(rawSourceVersion)}";
+                StatusChanged?.Invoke(this, blocked);
+                return false;
+            }
 
             var platform = PlatformInfo.Current;
             var targetExe = _dataKernelPath;

@@ -20,6 +20,16 @@ public class AppPreferences
     public AppUpdateChannel UpdateChannel { get; set; } = AppUpdateChannel.Release;
     public DownloadMirror KernelDownloadMirror { get; set; } = DownloadMirror.GitHub;
     public bool AutoCheckAppUpdates { get; set; } = true;
+
+    /// <summary>
+    /// Loopback port of the last sing-box native API service. Restored on startup so
+    /// carton can re-attach to an externally still-running kernel (e.g. after a crash
+    /// with TUN active) instead of probing the static default port.
+    /// </summary>
+    public int LastNativeApiPort { get; set; }
+
+    /// <summary>Secret of the last sing-box native API service (empty when none).</summary>
+    public string LastNativeApiSecret { get; set; } = string.Empty;
 }
 
 public enum KernelCacheCleanupPolicy

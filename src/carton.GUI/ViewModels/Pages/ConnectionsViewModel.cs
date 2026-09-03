@@ -39,11 +39,10 @@ public partial class ConnectionsViewModel : PageViewModelBase, IDisposable
     [ObservableProperty]
     private ConnectionItemViewModel? _selectedConnection;
 
-    private readonly DispatcherTimer? _refreshTimer;
-    private bool _isRefreshing;
     private bool _isOnPage;
     private bool _isWindowVisible = true;
     private int _pendingFilterRefresh;
+    private bool _subscribedToStreams;
 
     public ConnectionsViewModel()
     {
@@ -53,12 +52,11 @@ public partial class ConnectionsViewModel : PageViewModelBase, IDisposable
     public ConnectionsViewModel(ISingBoxManager singBoxManager) : this()
     {
         _singBoxManager = singBoxManager;
-        _refreshTimer = new DispatcherTimer
-        {
-            Interval = TimeSpan.FromSeconds(2)
-        };
-        _refreshTimer.Tick += OnRefreshTimerTick;
-        // Timer is NOT started here — it starts when user navigates to this page
+        // Event driven refresh: the sing-box manager maintains a long-lived
+        // SubscribeConnections stream and pushes merged snapshots (NEW/UPDATE/CLOSED
+        // deltas) - no polling timer needed.
+        _singBoxManager.ConnectionsUpdated += OnConnectionsUpdated;
+        _subscribedToStreams = true;
     }
 
     /// <summary>
@@ -67,13 +65,72 @@ public partial class ConnectionsViewModel : PageViewModelBase, IDisposable
     public void OnNavigatedTo()
     {
         _isOnPage = true;
-        UpdateRefreshState();
+
+        // Render the latest merged snapshot immediately (the streaming monitor keeps it
+        // fresh while the kernel runs), then let kernel pushes drive incremental updates.
+        if (_singBoxManager is { IsRunning: true })
+        {
+            ApplyConnections(_singBoxManager.CurrentConnections);
+        }
+
         RequestApplyFilters();
     }
 
-    private async void OnRefreshTimerTick(object? sender, EventArgs e)
+    private void OnConnectionsUpdated(object? sender, ConnectionsSnapshot snapshot)
     {
-        await RefreshAsync();
+        if (!_isOnPage || !_isWindowVisible)
+        {
+            return;
+        }
+
+        ApplyConnections(snapshot);
+    }
+
+    private void ApplyConnections(ConnectionsSnapshot snapshot)
+    {
+        var connections = snapshot.ActiveConnections;
+        var snapshots = new List<ConnectionSnapshot>(connections.Count);
+        foreach (var conn in connections)
+        {
+            var process = FormatText(conn.Process, conn.Inbound);
+            var source = FormatText(conn.Source, conn.Ip);
+            var destination = FormatText(conn.Destination, conn.Domain);
+            var outbound = FormatText(conn.Outbound);
+
+            snapshots.Add(new ConnectionSnapshot(
+                conn.Id,
+                process,
+                source,
+                destination,
+                conn.Network,
+                conn.Protocol,
+                outbound,
+                FormatBytes(conn.Upload),
+                FormatBytes(conn.Download),
+                conn.StartTime,
+                conn.Inbound,
+                conn.InboundType,
+                conn.Process,
+                conn.Ip,
+                conn.Source,
+                conn.Domain,
+                conn.Destination,
+                conn.Chains));
+        }
+
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            if (!_isOnPage || !_isWindowVisible)
+            {
+                return;
+            }
+
+            _allConnections.Clear();
+            _allConnections.AddRange(snapshots);
+            ConnectionCount = snapshots.Count;
+            PruneConnectionItemCache();
+            RequestApplyFilters();
+        }, Avalonia.Threading.DispatcherPriority.Background);
     }
 
     public void SetWindowVisible(bool isVisible)
@@ -86,12 +143,11 @@ public partial class ConnectionsViewModel : PageViewModelBase, IDisposable
     {
         if (_singBoxManager is { IsRunning: true } && _isOnPage && _isWindowVisible)
         {
-            _refreshTimer?.Start();
-            _ = RefreshAsync();
+            // Snapshot refresh comes from the kernel's incremental stream now;
+            // just render the latest merged state when (re)activated.
+            ApplyConnections(_singBoxManager.CurrentConnections);
             return;
         }
-
-        _refreshTimer?.Stop();
     }
 
     /// <summary>
@@ -104,29 +160,25 @@ public partial class ConnectionsViewModel : PageViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// Called when sing-box status changes. Starts/stops polling accordingly.
+    /// Called when sing-box status changes. Streaming monitors in the manager stop
+    /// with the kernel; just clear the local view when it stops.
     /// </summary>
     public void OnServiceStatusChanged(bool isRunning)
     {
         if (isRunning)
         {
             UpdateRefreshState();
+            return;
         }
-        else
+
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
         {
-            _refreshTimer?.Stop();
-            if (!isRunning)
-            {
-                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                {
-                    _allConnections.Clear();
-                    Connections.Clear();
-                    SelectedConnection = null;
-                    ConnectionCount = 0;
-                    VisibleConnectionCount = 0;
-                });
-            }
-        }
+            _allConnections.Clear();
+            Connections.Clear();
+            SelectedConnection = null;
+            ConnectionCount = 0;
+            VisibleConnectionCount = 0;
+        });
     }
 
     partial void OnSearchTextChanged(string value)
@@ -137,10 +189,22 @@ public partial class ConnectionsViewModel : PageViewModelBase, IDisposable
     [RelayCommand]
     private async Task CloseAll()
     {
-        if (_singBoxManager != null)
+        if (_singBoxManager == null)
+        {
+            return;
+        }
+
+        try
         {
             await _singBoxManager.CloseAllConnectionsAsync();
-            await RefreshAsync();
+            // The kernel pushes CLOSED events for each connection through the stream,
+            // so the list refreshes itself; nothing else to poll.
+        }
+        catch (Exception ex)
+        {
+            // No status bar on this page: surface the failure through the shared log
+            // channel so "clicked and nothing happened" stays diagnosable.
+            LogCloseFailure("close all connections", ex);
         }
     }
 
@@ -148,75 +212,34 @@ public partial class ConnectionsViewModel : PageViewModelBase, IDisposable
     private async Task CloseConnection(ConnectionItemViewModel? connection)
     {
         if (_singBoxManager == null || connection == null) return;
-        await _singBoxManager.CloseConnectionAsync(connection.Id);
-        connection.MarkClosed();
-        await RefreshAsync();
+
+        try
+        {
+            await _singBoxManager.CloseConnectionAsync(connection.Id);
+            connection.MarkClosed();
+            // CLOSED event arrives via the stream and removes the row.
+        }
+        catch (Exception ex)
+        {
+            LogCloseFailure($"close connection {connection.Id}", ex);
+        }
     }
+
+    private void LogCloseFailure(string operation, Exception ex)
+    {
+        // Best-effort diagnostics without a status bar: keep the failure observable
+        // (debug log + property) so "clicked and nothing happened" stays diagnosable.
+        CloseOperationError = $"Failed to {operation}: {ex.Message}";
+        System.Diagnostics.Debug.WriteLine($"[Connections] {CloseOperationError}");
+    }
+
+    [ObservableProperty]
+    private string? _closeOperationError;
 
     [RelayCommand]
     private void ClearSelectedConnection()
     {
         SelectedConnection = null;
-    }
-
-    private async Task RefreshAsync()
-    {
-        if (_singBoxManager == null || _isRefreshing || !_isOnPage || !_isWindowVisible) return;
-        _isRefreshing = true;
-
-        try
-        {
-            var connections = await _singBoxManager.GetConnectionsAsync();
-            var snapshots = new List<ConnectionSnapshot>(connections.Count);
-            foreach (var conn in connections)
-            {
-                var process = FormatText(conn.Process, conn.Inbound);
-                var source = FormatText(conn.Source, conn.Ip);
-                var destination = FormatText(conn.Destination, conn.Domain);
-                var outbound = FormatText(conn.Outbound);
-
-                snapshots.Add(new ConnectionSnapshot(
-                    conn.Id,
-                    process,
-                    source,
-                    destination,
-                    conn.Network,
-                    conn.Protocol,
-                    outbound,
-                    FormatBytes(conn.Upload),
-                    FormatBytes(conn.Download),
-                    conn.StartTime,
-                    conn.Inbound,
-                    conn.InboundType,
-                    conn.Process,
-                    conn.Ip,
-                    conn.Source,
-                    conn.Domain,
-                    conn.Destination,
-                    conn.Chains));
-            }
-
-            await Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                if (!_isOnPage || !_isWindowVisible)
-                {
-                    return;
-                }
-
-                _allConnections.Clear();
-                _allConnections.AddRange(snapshots);
-                ConnectionCount = snapshots.Count;
-                PruneConnectionItemCache();
-                RequestApplyFilters();
-            }, DispatcherPriority.Background);
-        }
-        catch
-        {
-        }
-        finally
-        {
-            _isRefreshing = false;
-        }
     }
 
     private static string FormatBytes(long bytes) => FormatHelper.FormatBytes(bytes);
@@ -385,13 +408,12 @@ public partial class ConnectionsViewModel : PageViewModelBase, IDisposable
 
     public void Dispose()
     {
-        if (_refreshTimer == null)
+        if (_subscribedToStreams && _singBoxManager != null)
         {
-            return;
+            _singBoxManager.ConnectionsUpdated -= OnConnectionsUpdated;
+            _subscribedToStreams = false;
         }
 
-        _refreshTimer.Stop();
-        _refreshTimer.Tick -= OnRefreshTimerTick;
         _allConnections.Clear();
         _connectionItemCache.Clear();
         _activeConnectionIds.Clear();

@@ -104,15 +104,28 @@ public class PreferencesService : IPreferencesService
             Directory.CreateDirectory(directory);
         }
 
-        using var stream = new FileStream(_preferencesPath, FileMode.Create, FileAccess.Write, FileShare.None);
-        using var writer = new Utf8JsonWriter(
+        // Atomic write (temp file + rename): a truncate-in-place FileStream
+        // (FileMode.Create) leaves a truncated preferences.json behind when the process
+        // dies mid-write (power loss / kill), silently wiping every user setting.
+        var tempPath = _preferencesPath + ".tmp";
+        using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+        using (var writer = new Utf8JsonWriter(
             stream,
             new JsonWriterOptions
             {
                 Indented = true,
                 Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-            });
-        JsonSerializer.Serialize(writer, preferences, CartonCoreJsonContext.Default.AppPreferences);
-        writer.Flush();
+            }))
+        {
+            JsonSerializer.Serialize(writer, preferences, CartonCoreJsonContext.Default.AppPreferences);
+            writer.Flush();
+            // Durability boundary: NTFS rename is atomic but the .tmp's DATA may still
+            // be in the disk cache on power loss. One fsync before Dispose closes the
+            // last "renamed onto an incomplete file" window (milliseconds, settings
+            // file - cheap enough to not leave the edge open).
+            stream.Flush(flushToDisk: true);
+        }
+
+        File.Move(tempPath, _preferencesPath, overwrite: true);
     }
 }

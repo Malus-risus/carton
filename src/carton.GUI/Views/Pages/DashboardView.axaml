@@ -233,22 +233,11 @@
                                 Data="M3 6 H21 V18 H3 Z M6.5 10 L9.5 12 L6.5 14 M11.5 14 H16.5"/>
                     </Button>
                     <Button Classes="iconButton"
-                            Command="{Binding OpenClashWebUiCommand}"
-                            IsVisible="{Binding !ShowSingBoxWebUiOption}"
-                            IsEnabled="{Binding ShowDashboardMetrics}"
-                            ToolTip.Tip="{DynamicResource Dashboard.Button.OpenWebUi}">
-                      <PathIcon Width="14"
-                                Height="14"
-                                Data="{StaticResource DashboardWebUiIconData}"/>
-                    </Button>
-                    <Button Classes="iconButton"
                             IsVisible="{Binding ShowSingBoxWebUiOption}"
                             IsEnabled="{Binding ShowDashboardMetrics}"
                             ToolTip.Tip="{DynamicResource Dashboard.Button.OpenWebUi}">
                       <Button.Flyout>
                         <MenuFlyout Placement="Bottom">
-                          <MenuItem Header="{DynamicResource Dashboard.Menu.OpenClashWebUi}"
-                                    Command="{Binding OpenClashWebUiCommand}"/>
                           <MenuItem Header="{DynamicResource Dashboard.Menu.OpenSingBoxWebUi}"
                                     Command="{Binding OpenSingBoxWebUiCommand}"/>
                         </MenuFlyout>

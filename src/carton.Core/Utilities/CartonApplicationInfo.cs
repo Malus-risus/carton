@@ -8,7 +8,7 @@ public static class CartonApplicationInfo
 {
     private const string DefaultVersion = "0.0.0";
     public const string UnknownSingBoxVersion = "unknown";
-    public const string DefaultSingBoxVersion = "1.13.0";
+    public const string DefaultSingBoxVersion = "1.14.0";
     private static readonly Lazy<string> VersionLazy = new(ResolveVersion);
     private static readonly object SingBoxVersionLock = new();
     private static string? _singBoxVersion;
@@ -54,14 +54,8 @@ public static class CartonApplicationInfo
             return false;
         }
 
-        var patch = 0;
-        if (parts.Length >= 3 && !int.TryParse(parts[2], out patch))
-        {
-            patch = 0;
-        }
-
         return major > 1 ||
-               major == 1 && (minor > 14 || minor == 14 && patch >= 0);
+               major == 1 && minor >= 14;
     }
 
     public static void SetSingBoxVersion(string? version)
