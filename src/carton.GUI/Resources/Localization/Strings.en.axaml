@@ -157,7 +157,7 @@
   <x:String x:Key="Dashboard.Port.Scope.EnabledStatus">LAN access enabled</x:String>
   <x:String x:Key="Dashboard.Port.Scope.DisabledStatus">Switched to local only</x:String>
   <x:String x:Key="Dashboard.LogLevel.HighVolumeHint">Current log volume is high. Warn or above is recommended.</x:String>
-  <x:String x:Key="Dashboard.ClashMode">Clash Outbound Mode</x:String>
+  <x:String x:Key="Dashboard.ProxyMode">Outbound Mode</x:String>
 	<x:String x:Key="Dashboard.Label.UploadSpeed">Upload Speed</x:String>
 	<x:String x:Key="Dashboard.Label.DownloadSpeed">Download Speed</x:String>
 	<x:String x:Key="Dashboard.Status.CommandCopied">Command copied to clipboard</x:String>
@@ -171,7 +171,6 @@
   <x:String x:Key="Dashboard.Menu.OpenCmd">Open CMD</x:String>
   <x:String x:Key="Dashboard.Menu.OpenPs">Open PowerShell</x:String>
   <x:String x:Key="Dashboard.Button.OpenWebUi">Open WebUI</x:String>
-  <x:String x:Key="Dashboard.Menu.OpenSingBoxWebUi">sing-box API WebUI</x:String>
   <x:String x:Key="Dashboard.Status.OpenWebUiFailed">Failed to open WebUI</x:String>
   <x:String x:Key="Dashboard.Status.SystemProxyToggleFailed">Failed to toggle system proxy</x:String>
   <x:String x:Key="Dashboard.Status.RuntimeOptionsResetToConfig">Options reset to config values</x:String>

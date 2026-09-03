@@ -195,7 +195,7 @@ internal sealed class SingBoxGrpcApiClient : ISingBoxApiClient, IDisposable
         }
         catch (Exception ex)
         {
-            _log?.Invoke($"[WARN] Failed to fetch ClashModeStatus via gRPC: {ex.Message}");
+            _log?.Invoke($"[WARN] Failed to fetch mode status via gRPC: {ex.Message}");
             return null;
         }
     }
@@ -205,12 +205,12 @@ internal sealed class SingBoxGrpcApiClient : ISingBoxApiClient, IDisposable
         try
         {
             var (client, headers) = GetClient();
-            await client.SetClashModeAsync(new ClashMode { Mode = mode }, headers);
+            await client.SetClashModeAsync(new Daemon.ClashMode { Mode = mode }, headers);
             return true;
         }
         catch (Exception ex)
         {
-            _log?.Invoke($"[WARN] Failed to set ClashMode via gRPC: {ex.Message}");
+            _log?.Invoke($"[WARN] Failed to set mode via gRPC: {ex.Message}");
             return false;
         }
     }
@@ -278,7 +278,7 @@ internal sealed class SingBoxGrpcApiClient : ISingBoxApiClient, IDisposable
         await client.URLTestAsync(new URLTestRequest { OutboundTag = outboundTag }, headers);
     }
 
-    public async IAsyncEnumerable<Daemon.ClashMode> SubscribeClashModeStreamAsync(
+    public async IAsyncEnumerable<Daemon.ClashMode> SubscribeModeStreamAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var (client, headers) = GetClient();
@@ -526,7 +526,7 @@ internal sealed class SingBoxGrpcApiClient : ISingBoxApiClient, IDisposable
                     // The initial subscription snapshot reports every known connection as a
                     // NEW event, including recently closed ones (sing-box pushes closed
                     // connections with ClosedAt set). Skip them so only active connections are
-                    // returned - the legacy clash REST /connections semantics carton relied on.
+                    // returned - matching the semantics the connections page has always relied on.
                     if (evt.Connection is not { } c || c.ClosedAt > 0)
                     {
                         continue;

@@ -127,11 +127,27 @@ mindmap
 
 ### 6. 已知限制（诚实声明，详见重构计划）
 
-> **API secret 的威胁模型说明**：runtime 配置中的 `secret` 是每次启动随机生成、
-> 仅绑定 127.0.0.1 的 loopback API 鉴权，防护目标是"本机其他未授权进程"。
-> 桌面单用户场景下没有比随机生成更安全的存放方式（环境变量同样可被本机进程读取，
-> 密钥管理服务属于服务端部署形态），故不做密钥管理集成。配置文件位于用户数据目录，
-> 权限继承 OS 用户隔离。
+> **关于 `clash_api` 配置块的说明（全面废弃 Clash API 的语义边界）**：旧 Clash HTTP
+> REST API（ClashHttpApiClient、external_controller 监听、`/ui/` 面板、双 API 下拉选择）
+> 已在迁移中**全部移除**，Dashboard 的 WebUI 按钮改为直开 sing-box 官方面板。代码中
+> 保留的 `experimental.clash_api` 配置块**不是旧 API 的残留**——它是 sing-box 内核创建
+> 出站模式后端（gRPC `GetClashModeStatus`/`SetClashMode`/`SubscribeClashMode` 的服务端
+> 依赖，见 sing-box v1.14.0 `box.go` needClashAPI 判定）的必填写法，`external_controller`
+> 显式置空串确保不监听任何 REST 端口。功能与代码命名已全面去 Clash 化
+> （ProxyModeCacheService / ModeOptions / 出站模式），仅 wire 协议名与配置键按 sing-box
+> 契约原样保留。
+
+> **API secret 的威胁模型说明**：carton **从不向内核配置写入任何 secret**（用户的
+> api 服务块与 carton 自建块均不写）。唯一可能出现 secret 的来源是**用户自己在
+> services.api.secret / clash_api.secret 里配置的值**——carton 读取它用于连接鉴权，
+> 但不修改不传播。用户未配置时内核以无鉴权模式运行（sing-box 的 `secret == ""`
+> 即关闭鉴权检查，这是内核的正式设计），carton 匿名连接。> 由用户自行在配置中提供 secret。
+>
+> **知情记录（外部 review #6）**：无 secret 叠加 gRPC reflection（v1.14.0
+> daemon/server.go:25 默认注册）与 CORS 白名单中的明文 http origin，理论上存在
+> MITM/DNS 劫持页面经明文 origin 调用本机 API 的风险面。这是“不强加 secret”
+> 决策的已知代价，维持产品决策；若未来要收口，方向是仅对 carton 自建 api 块
+> 注入随机 secret（用户块仍一字不动），与块级主权原则兼容。
 
 * **内核版本硬性要求 ≥ 1.14.0**：启动前有版本闸门与明确报错。
 * **保留最小 `experimental.clash_api`（空 `external_controller`）**：gRPC 的 clash 模式三件套依赖 ClashServer 存在；彻底删除会让模式切换 UI 失效、`clash_mode` 路由规则永不匹配。

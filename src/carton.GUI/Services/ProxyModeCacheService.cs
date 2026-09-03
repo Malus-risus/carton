@@ -3,12 +3,12 @@ using carton.Core.Models;
 
 namespace carton.GUI.Services;
 
-public sealed class ClashConfigCacheService
+public sealed class ProxyModeCacheService
 {
-    private static readonly Lazy<ClashConfigCacheService> _instance = new(() => new ClashConfigCacheService());
-    public static ClashConfigCacheService Instance => _instance.Value;
+    private static readonly Lazy<ProxyModeCacheService> _instance = new(() => new ProxyModeCacheService());
+    public static ProxyModeCacheService Instance => _instance.Value;
 
-    private ClashConfigCacheService()
+    private ProxyModeCacheService()
     {
     }
 

@@ -151,7 +151,7 @@
 	<x:String x:Key="Dashboard.Port.Scope.EnabledStatus">已允许局域网连接</x:String>
 	<x:String x:Key="Dashboard.Port.Scope.DisabledStatus">已切换为仅本机</x:String>
   <x:String x:Key="Dashboard.LogLevel.HighVolumeHint">当前日志较多，推荐 warn 及以上</x:String>
-	<x:String x:Key="Dashboard.ClashMode">Clash 出站模式</x:String>
+	<x:String x:Key="Dashboard.ProxyMode">出站模式</x:String>
 	<x:String x:Key="Dashboard.Label.UploadSpeed">上传速度</x:String>
 	<x:String x:Key="Dashboard.Label.DownloadSpeed">下载速度</x:String>
 	<x:String x:Key="Dashboard.Status.CommandCopied">命令已复制到剪贴板</x:String>
@@ -165,7 +165,6 @@
 	<x:String x:Key="Dashboard.Menu.OpenCmd">打开 CMD</x:String>
 	<x:String x:Key="Dashboard.Menu.OpenPs">打开 PowerShell</x:String>
 	<x:String x:Key="Dashboard.Button.OpenWebUi">访问 WebUI</x:String>
-	<x:String x:Key="Dashboard.Menu.OpenSingBoxWebUi">sing-box API WebUI</x:String>
 	<x:String x:Key="Dashboard.Status.OpenWebUiFailed">打开 WebUI 失败</x:String>
   <x:String x:Key="Dashboard.Status.SystemProxyToggleFailed">切换系统代理失败</x:String>
   <x:String x:Key="Dashboard.Status.RuntimeOptionsResetToConfig">已重置为配置值</x:String>

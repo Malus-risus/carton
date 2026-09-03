@@ -29,7 +29,7 @@ public partial class DashboardViewModel : PageViewModelBase
     private const string TerminalProxyTypePowerShell = "ps";
     private const string TerminalProxyTypeLinux = "linux";
     private const int TrafficSparklineSampleCount = 60;
-    private static readonly TimeSpan ClashModeCacheDuration = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan ModeCacheDuration = TimeSpan.FromSeconds(2);
     private static readonly IReadOnlyList<DashboardSiteStatusDefinition> ConnectivityTargets =
     [
         new("Baidu", "https://apps.bdimg.com/favicon.ico"),
@@ -46,9 +46,9 @@ public partial class DashboardViewModel : PageViewModelBase
     private readonly Action<string, int>? _toastWriter;
     private readonly Action<string>? _logWriter;
     private readonly ILocalizationService _localizationService;
-    private readonly ClashConfigCacheService _clashConfigCache;
-    private string? _currentClashMode;
-    private bool _suppressSelectedClashModeOptionChange;
+    private readonly ProxyModeCacheService _proxyModeCache;
+    private string? _currentMode;
+    private bool _suppressSelectedModeOptionChange;
     private ProfileRuntimeOptions _runtimeOptions = new();
     private bool _suppressRuntimeOptionUpdates;
     private bool _suppressSystemProxyApply;
@@ -96,26 +96,26 @@ public partial class DashboardViewModel : PageViewModelBase
     [ObservableProperty]
     private ObservableCollection<DashboardProfileItemViewModel> _availableProfiles = new();
 
-    public ObservableCollection<DashboardClashModeOptionViewModel> ClashModeOptions { get; } = new();
+    public ObservableCollection<DashboardModeOptionViewModel> ModeOptions { get; } = new();
     public ObservableCollection<long> UploadTrafficSamples { get; } = new();
     public ObservableCollection<long> DownloadTrafficSamples { get; } = new();
     public ObservableCollection<DashboardSiteStatusItemViewModel> ConnectivityItems { get; } = new();
 
-    public int ClashModeColumnCount => Math.Max(1, ClashModeOptions.Count);
-    public bool UseClashModeDropdown => ClashModeOptions.Count > 5;
-    public bool ShowClashModeSegments => ClashModeOptions.Count > 0 && !UseClashModeDropdown;
+    public int ModeColumnCount => Math.Max(1, ModeOptions.Count);
+    public bool UseModeDropdown => ModeOptions.Count > 5;
+    public bool ShowModeSegments => ModeOptions.Count > 0 && !UseModeDropdown;
 
     [ObservableProperty]
-    private DashboardClashModeOptionViewModel? _selectedClashModeOption;
+    private DashboardModeOptionViewModel? _selectedModeOption;
 
-    partial void OnSelectedClashModeOptionChanged(DashboardClashModeOptionViewModel? value)
+    partial void OnSelectedModeOptionChanged(DashboardModeOptionViewModel? value)
     {
-        if (_suppressSelectedClashModeOptionChange || value == null)
+        if (_suppressSelectedModeOptionChange || value == null)
         {
             return;
         }
 
-        _ = ChangeClashMode(value);
+        _ = ChangeMode(value);
     }
 
     [ObservableProperty]
@@ -124,9 +124,6 @@ public partial class DashboardViewModel : PageViewModelBase
     public bool IsWindows => RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
     public bool IsLinux => RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
     public bool ShowTerminalProxyButtons => IsConnected;
-    public bool ShowSingBoxWebUiOption =>
-        CartonApplicationInfo.SupportsNativeApi(CartonApplicationInfo.EffectiveSingBoxVersion) &&
-        HttpClientFactory.LocalNativeApiPort > 0;
 
     [ObservableProperty]
     private string _kernelVersion = "unknown";
@@ -426,7 +423,6 @@ public partial class DashboardViewModel : PageViewModelBase
         OnPropertyChanged(nameof(CanToggleTunInbound));
         OnPropertyChanged(nameof(LocalOnlyAccessToolTip));
         OnPropertyChanged(nameof(LanAccessToolTip));
-        OnPropertyChanged(nameof(ShowSingBoxWebUiOption));
         RefreshConnectivityCommand.NotifyCanExecuteChanged();
     }
 
@@ -434,7 +430,7 @@ public partial class DashboardViewModel : PageViewModelBase
     {
         InitializePageMetadata("Home", "Navigation.Dashboard", "Dashboard");
         _localizationService = LocalizationService.Instance;
-        _clashConfigCache = ClashConfigCacheService.Instance;
+        _proxyModeCache = ProxyModeCacheService.Instance;
         InitializeConnectivityItems();
         AvailableProfiles.CollectionChanged += OnAvailableProfilesCollectionChanged;
         _localizationService.LanguageChanged += (_, _) =>
@@ -476,7 +472,7 @@ public partial class DashboardViewModel : PageViewModelBase
         _singBoxManager.StatusChanged += OnStatusChanged;
         _singBoxManager.TrafficUpdated += OnTrafficUpdated;
         _singBoxManager.MemoryUpdated += OnMemoryUpdated;
-        _singBoxManager.ClashModeChanged += OnClashModeChanged;
+        _singBoxManager.ModeChanged += OnModeChanged;
         KernelStatus = _singBoxManager.State.Status;
         _ = LoadProfilesAsync();
         _ = RefreshKernelVersionAsync();
@@ -520,8 +516,7 @@ public partial class DashboardViewModel : PageViewModelBase
             OnPropertyChanged(nameof(CanUseDashboardControls));
             OnPropertyChanged(nameof(CanToggleTunInbound));
             OnPropertyChanged(nameof(ShowTerminalProxyButtons));
-            OnPropertyChanged(nameof(ShowSingBoxWebUiOption));
-
+    
             if (status == ServiceStatus.Error)
             {
                 StartupStatus = BuildStartFailureStatus();
@@ -545,8 +540,8 @@ public partial class DashboardViewModel : PageViewModelBase
             Dispatcher.UIThread.Post(() =>
             {
                 UpdateLiveRefreshState();
-                _clashConfigCache.Clear();
-                UpdateClashModeSelection(null);
+                _proxyModeCache.Clear();
+                UpdateModeSelection(null);
                 ResetTrafficDisplay();
             });
         }
@@ -594,7 +589,7 @@ public partial class DashboardViewModel : PageViewModelBase
         ApplyMemoryUsage(_singBoxManager?.State.MemoryInUse ?? 0);
     }
 
-    private void OnClashModeChanged(object? sender, string mode)
+    private void OnModeChanged(object? sender, string mode)
     {
         // Push-driven mode updates: fires on our own SetModeAsync (optimistic) and on
         // changes made by other control clients (official sing-box dashboard).
@@ -604,20 +599,20 @@ public partial class DashboardViewModel : PageViewModelBase
             // cache dirty so navigation there reloads instead of rendering stale groups.
             // Preserve the known mode list - overwriting it with null (before the first
             // GetModeConfigAsync filled it) collapses the selector to a single button.
-            var previous = _clashConfigCache.Current;
+            var previous = _proxyModeCache.Current;
             var newModeList = previous?.ModeList;
             if (newModeList == null && _singBoxManager is { IsRunning: true })
             {
                 // List not fetched yet: request it once so the selector keeps its options.
-                _ = RefreshClashModeAsync();
+                _ = RefreshModeAsync();
             }
 
-            _clashConfigCache.Update(new ApiModeConfigSnapshot
+            _proxyModeCache.Update(new ApiModeConfigSnapshot
             {
                 Mode = mode,
                 ModeList = newModeList
             }, isDirty: true);
-            UpdateClashModeSelection(mode);
+            UpdateModeSelection(mode);
         });
     }
 
@@ -1044,27 +1039,27 @@ public partial class DashboardViewModel : PageViewModelBase
     }
 
     [RelayCommand]
-    private async Task ChangeClashMode(DashboardClashModeOptionViewModel? option)
+    private async Task ChangeMode(DashboardModeOptionViewModel? option)
     {
         if (option == null || string.IsNullOrWhiteSpace(option.Mode))
         {
             return;
         }
 
-        if (string.Equals(_currentClashMode, option.Mode, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(_currentMode, option.Mode, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
 
-        var success = await SetClashModeAsync(option.Mode);
+        var success = await SetModeAsync(option.Mode);
         if (success)
         {
-            // The manager updates its push-stream cache and raises ClashModeChanged,
+            // The manager updates its push-stream cache and raises ModeChanged,
             // which refreshes the UI selection - no hand-built cache snapshot needed.
         }
         else
         {
-            await RefreshClashModeAsync();
+            await RefreshModeAsync();
         }
     }
 
@@ -1626,11 +1621,10 @@ public partial class DashboardViewModel : PageViewModelBase
             // authorizes the native API too, and vice versa - both fronts should agree.
             var experimentalForSecrets = root["experimental"] as JsonObject;
             if (string.IsNullOrWhiteSpace(nativeApiSecret) &&
-                experimentalForSecrets?[
-"clash_api"] is JsonObject existingClashApi &&
-                TryReadJsonString(existingClashApi, "secret", out var existingClashSecret))
+                experimentalForSecrets?["clash_api"] is JsonObject existingModeBackend &&
+                TryReadJsonString(existingModeBackend, "secret", out var existingModeSecret))
             {
-                nativeApiSecret = existingClashSecret;
+                nativeApiSecret = existingModeSecret;
             }
 
             var portPlan = ApiPortPlanner.Resolve(
@@ -1641,65 +1635,140 @@ public partial class DashboardViewModel : PageViewModelBase
             nativeApiPort = portPlan.NativeApiPort;
 
             apiService["type"] = "api";
+
+            // tag/listen: only defaulted on carton's OWN block (user blocks keep theirs).
             if (!TryReadJsonString(apiService, "tag", out _))
             {
                 apiService["tag"] = "carton-api";
             }
+
             if (!TryReadJsonString(apiService, "listen", out var nativeApiListen) ||
                 string.IsNullOrWhiteSpace(nativeApiListen))
             {
                 apiService["listen"] = "127.0.0.1";
             }
+
+            // listen_port: always written back, but with the user's own value whenever
+            // their block has one (carton needs it to connect); carton allocates a free
+            // port (9091+) only when absent.
             apiService["listen_port"] = nativeApiPort;
-            apiService["secret"] = nativeApiSecret;
+
+            // secret: NEVER injected, not even into carton's own block. sing-box runs
+            // fine unauthenticated (secret == "" disables the auth check). The only
+            // secret carton ever knows is one READ from the user's own config
+            // (services.api.secret / clash_api.secret, whichever exists); when the user
+            // configures none, carton stores an empty value and connects anonymously.
+
+            // CORS allow-list: missing entries are complemented everywhere (it only
+            // enables the built-in dashboard/WebUI button from the browser - a
+            // functional dependency with no security impact). User-configured lists
+            // are preserved verbatim.
+            // CORS allow-list, by TYPE (arrays throw on GetValue<string>, so never
+            // use TryReadJsonString here): a user-configured value - array OR single
+            // string (badoption.Listable[string] accepts both) - is preserved verbatim
+            // with a warning when it cannot serve the built-in dashboard; only a
+            // missing/invalid entry receives carton's default list.
+            // Configure() runs unconditionally first: it is a singleton whose side
+            // effect (UpdateServer) keeps the dashboard bootstrap pointing at the
+            // CURRENT api port/secret even when the user's own list is kept.
             var dashboardBootstrap = SingBoxDashboardBootstrapService.Configure(
                 nativeApiPort,
                 nativeApiSecret,
                 LogWarning,
                 nativeApiPort,
                 nativeApiPort);
-            apiService["access_control_allow_origin"] = new JsonArray(
-                (JsonNode)"http://sing-box-dashboard.sagernet.org",
-                (JsonNode)"https://sing-box-dashboard.sagernet.org",
-                (JsonNode)"http://dash.sing-box.app",
-                (JsonNode)"https://dash.sing-box.app",
-                (JsonNode)dashboardBootstrap.Origin);
-            apiService["access_control_allow_private_network"] = true;
+
+            if (apiService["access_control_allow_origin"] is JsonArray userAllowList)
+            {
+                var servesDashboard = false;
+                foreach (var origin in userAllowList)
+                {
+                    if (origin is not JsonValue originValue ||
+                        !originValue.TryGetValue<string>(out var originText))
+                    {
+                        continue;
+                    }
+
+                    if (originText.Contains("sing-box-dashboard.sagernet.org", StringComparison.OrdinalIgnoreCase) ||
+                        originText.Contains("dash.sing-box.app", StringComparison.OrdinalIgnoreCase))
+                    {
+                        servesDashboard = true;
+                        break;
+                    }
+                }
+
+                if (!servesDashboard)
+                {
+                    LogWarning("User api service access_control_allow_origin does not include the official dashboard origins; the WebUI button may not be able to reach the API");
+                }
+            }
+            else if (apiService["access_control_allow_origin"] is JsonValue userAllowOrigin &&
+                     userAllowOrigin.TryGetValue<string>(out var userOriginText))
+            {
+                // Single-string form (badoption.Listable[string]): same sovereignty, same warning.
+                if (!userOriginText.Contains("sing-box-dashboard.sagernet.org", StringComparison.OrdinalIgnoreCase) &&
+                    !userOriginText.Contains("dash.sing-box.app", StringComparison.OrdinalIgnoreCase))
+                {
+                    LogWarning("User api service access_control_allow_origin does not include the official dashboard origins; the WebUI button may not be able to reach the API");
+                }
+            }
+            else
+            {
+                apiService["access_control_allow_origin"] = new JsonArray(
+                    (JsonNode)"http://sing-box-dashboard.sagernet.org",
+                    (JsonNode)"https://sing-box-dashboard.sagernet.org",
+                    (JsonNode)"http://dash.sing-box.app",
+                    (JsonNode)"https://dash.sing-box.app",
+                    (JsonNode)dashboardBootstrap.Origin);
+            }
+
+            if (!apiService.ContainsKey("access_control_allow_private_network"))
+            {
+                apiService["access_control_allow_private_network"] = true;
+            }
 
             var experimental = root["experimental"] as JsonObject ?? new JsonObject();
             root["experimental"] = experimental;
 
-            // Keep a minimal clash_api block instead of removing it: sing-box only creates the
-            // clash server (mode list / SetClashMode / SubscribeClashMode backend for the gRPC
-            // daemon API) when experimental.clash_api is present, and clash_mode route rules
-            // never match without it. An empty external_controller disables the legacy REST
-            // listener (sing-box skips listening when it is empty) while keeping the mode
-            // feature alive - the same trick the official graphical clients use.
-            // Explicit user values are preserved (same standard as store_dns below); only
-            // missing fields get the minimal mode-backend defaults.
-            var clashApi = experimental["clash_api"] as JsonObject ?? new JsonObject();
-            if (!clashApi.ContainsKey("external_controller"))
+            // Minimal-change principle: a user-provided clash_api block is passed through
+            // UNTOUCHED - no field is added, removed or overwritten, even if fields are
+            // missing (the kernel defaults apply on its own). Only when the block does
+            // not exist at all does carton create one, with the mode-backend minimum.
+            // external_controller is "" as an EXPLICIT statement of intent: v1.14 treats
+            // absent and "" identically (bool = value != "" -> no REST listener either
+            // way), so this is a documentation pin, not a necessity. No secret is written
+            // even here: sing-box runs fine unauthenticated, and a secret is never
+            // forced onto the config.
+            if (experimental.ContainsKey("clash_api") &&
+                experimental["clash_api"] is JsonObject userModeBackend &&
+                userModeBackend["external_controller"] is JsonValue modeController &&
+                modeController.TryGetValue<string>(out var modeControllerText) &&
+                !string.IsNullOrWhiteSpace(modeControllerText))
             {
-                clashApi["external_controller"] = "";
+                // Sovereignty honored, but a non-empty external_controller in the user's
+                // block means the kernel WILL open a REST listener there (the user asked
+                // for it) - log it so "why is 9090 open" is answerable from the log.
+                LogWarning($"User clash_api.external_controller is set; the kernel will open a REST listener at {modeControllerText}");
             }
 
-            if (!clashApi.ContainsKey("secret"))
+            if (!experimental.ContainsKey("clash_api") ||
+                experimental["clash_api"] is not JsonObject)
             {
-                clashApi["secret"] = nativeApiSecret;
+                var modeBackend = new JsonObject
+                {
+                    ["external_controller"] = "",
+                    ["default_mode"] = "rule"
+                };
+                experimental["clash_api"] = modeBackend;
             }
-
-            if (!clashApi.ContainsKey("default_mode"))
-            {
-                clashApi["default_mode"] = "rule";
-            }
-
-            experimental["clash_api"] = clashApi;
+            // else: user block kept verbatim - see the minimal-change principle above.
 
             HttpClientFactory.UpdateLocalApi(
                 "127.0.0.1",
                 nativeApiPort,
                 nativeApiSecret);
             HttpClientFactory.UpdateLocalNativeApi("127.0.0.1", nativeApiPort, nativeApiSecret);
+            OnPropertyChanged(nameof(CanOpenSingBoxWebUi));
             // Persist the endpoint so a restarted carton can re-attach to this kernel
             // (see MainViewModel.InitializeAsync restore).
             if (_preferencesService != null)
@@ -1710,19 +1779,33 @@ public partial class DashboardViewModel : PageViewModelBase
                 _preferencesService.Save(preferences);
             }
 
-            OnPropertyChanged(nameof(ShowSingBoxWebUiOption));
-
-            var cacheFile = experimental["cache_file"] as JsonObject ?? new JsonObject();
-            cacheFile["enabled"] = true;
-            cacheFile["path"] = "cache.db";
-            cacheFile["store_fakeip"] = true;
-            // store_dns requires sing-box >= 1.14.0; never override an explicit user choice.
-            if (!cacheFile.ContainsKey("store_dns"))
+    
+            // Same minimal-change principle as clash_api above: a user-provided
+            // cache_file block passes through untouched. Only when absent does carton
+            // create its standard block (fakeip persistence + store_dns, the latter
+            // being a 1.14 field - never written into a user's own block).
+            if (!experimental.ContainsKey("cache_file") ||
+                experimental["cache_file"] is not JsonObject)
             {
-                cacheFile["store_dns"] = true;
+                experimental["cache_file"] = new JsonObject
+                {
+                    ["enabled"] = true,
+                    ["path"] = "cache.db",
+                    ["store_fakeip"] = true,
+                    ["store_dns"] = true
+                };
             }
-
-            experimental["cache_file"] = cacheFile;
+            else if (experimental["cache_file"] is JsonObject userCacheFile &&
+                     userCacheFile["enabled"] is JsonValue cacheEnabled &&
+                     cacheEnabled.TryGetValue<bool>(out var cacheEnabledValue) &&
+                     !cacheEnabledValue)
+            {
+                // Sovereignty honored, but a disabled cache file degrades carton
+                // features silently (selected nodes / fakeip no longer persist across
+                // restarts) - surface it once at startup.
+                LogWarning("User cache_file is disabled; selected nodes and fakeip mappings will not persist across kernel restarts");
+            }
+            // else: user cache_file kept verbatim.
 
             var runtimeDirectory = _configManager!.RuntimeConfigDirectory;
             Directory.CreateDirectory(runtimeDirectory);
@@ -1747,33 +1830,33 @@ public partial class DashboardViewModel : PageViewModelBase
         }
     }
 
-    private int _clashModeRefreshInFlight;
+    private int _modeRefreshInFlight;
 
-    private async Task RefreshClashModeAsync()
+    private async Task RefreshModeAsync()
     {
         // Coalesce concurrent refreshes: rapid mode pushes (e.g. before the mode list
         // lands) must not fan out into parallel API round-trips.
-        if (Interlocked.CompareExchange(ref _clashModeRefreshInFlight, 1, 0) != 0)
+        if (Interlocked.CompareExchange(ref _modeRefreshInFlight, 1, 0) != 0)
         {
             return;
         }
 
         try
         {
-            if (!_clashConfigCache.TryGetFresh(ClashModeCacheDuration, out var config))
+            if (!_proxyModeCache.TryGetFresh(ModeCacheDuration, out var config))
             {
-                config = await GetClashConfigFromApiAsync();
+                config = await GetModeConfigFromApiAsync();
             }
 
             await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
             {
-                ApplyClashModeOptions(config?.ModeList, config?.Mode);
-                UpdateClashModeSelection(config?.Mode);
+                ApplyModeOptions(config?.ModeList, config?.Mode);
+                UpdateModeSelection(config?.Mode);
             });
         }
         finally
         {
-            Volatile.Write(ref _clashModeRefreshInFlight, 0);
+            Volatile.Write(ref _modeRefreshInFlight, 0);
         }
     }
 
@@ -1841,7 +1924,7 @@ public partial class DashboardViewModel : PageViewModelBase
 
         InitializeTrafficMetrics();
         InitializeMemoryMetrics();
-        _ = RefreshClashModeAsync();
+        _ = RefreshModeAsync();
         _ = RefreshConnectivityCoreAsync(force: false);
     }
 
@@ -1893,7 +1976,7 @@ public partial class DashboardViewModel : PageViewModelBase
         }
     }
 
-    private async Task<ApiModeConfigSnapshot?> GetClashConfigFromApiAsync()
+    private async Task<ApiModeConfigSnapshot?> GetModeConfigFromApiAsync()
     {
         if (_singBoxManager == null)
         {
@@ -1901,11 +1984,11 @@ public partial class DashboardViewModel : PageViewModelBase
         }
 
         var config = await _singBoxManager.GetModeConfigAsync();
-        _clashConfigCache.Update(config);
+        _proxyModeCache.Update(config);
         return config;
     }
 
-    private async Task<bool> SetClashModeAsync(string mode)
+    private async Task<bool> SetModeAsync(string mode)
     {
         if (_singBoxManager == null)
         {
@@ -1915,11 +1998,11 @@ public partial class DashboardViewModel : PageViewModelBase
         return await _singBoxManager.SetModeAsync(mode);
     }
 
-    private void UpdateClashModeSelection(string? mode)
+    private void UpdateModeSelection(string? mode)
     {
-        _currentClashMode = string.IsNullOrWhiteSpace(mode) ? null : mode;
-        DashboardClashModeOptionViewModel? selectedOption = null;
-        foreach (var option in ClashModeOptions)
+        _currentMode = string.IsNullOrWhiteSpace(mode) ? null : mode;
+        DashboardModeOptionViewModel? selectedOption = null;
+        foreach (var option in ModeOptions)
         {
             option.IsSelected = !string.IsNullOrWhiteSpace(mode) &&
                 string.Equals(option.Mode, mode, StringComparison.OrdinalIgnoreCase);
@@ -1930,18 +2013,18 @@ public partial class DashboardViewModel : PageViewModelBase
             }
         }
 
-        _suppressSelectedClashModeOptionChange = true;
+        _suppressSelectedModeOptionChange = true;
         try
         {
-            SelectedClashModeOption = selectedOption;
+            SelectedModeOption = selectedOption;
         }
         finally
         {
-            _suppressSelectedClashModeOptionChange = false;
+            _suppressSelectedModeOptionChange = false;
         }
     }
 
-    private void ApplyClashModeOptions(IReadOnlyList<string>? modeList, string? currentMode)
+    private void ApplyModeOptions(IReadOnlyList<string>? modeList, string? currentMode)
     {
         var modes = new List<string>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1960,36 +2043,36 @@ public partial class DashboardViewModel : PageViewModelBase
             modes.Add(currentMode);
         }
 
-        if (AreClashModeOptionsEqual(modes))
+        if (AreModeOptionsEqual(modes))
         {
             return;
         }
 
-        ClashModeOptions.Clear();
+        ModeOptions.Clear();
         for (var i = 0; i < modes.Count; i++)
         {
-            ClashModeOptions.Add(new DashboardClashModeOptionViewModel
+            ModeOptions.Add(new DashboardModeOptionViewModel
             {
                 Mode = modes[i],
                 DisplayName = modes[i]
             });
         }
 
-        OnPropertyChanged(nameof(ClashModeColumnCount));
-        OnPropertyChanged(nameof(UseClashModeDropdown));
-        OnPropertyChanged(nameof(ShowClashModeSegments));
+        OnPropertyChanged(nameof(ModeColumnCount));
+        OnPropertyChanged(nameof(UseModeDropdown));
+        OnPropertyChanged(nameof(ShowModeSegments));
     }
 
-    private bool AreClashModeOptionsEqual(IReadOnlyList<string> modes)
+    private bool AreModeOptionsEqual(IReadOnlyList<string> modes)
     {
-        if (ClashModeOptions.Count != modes.Count)
+        if (ModeOptions.Count != modes.Count)
         {
             return false;
         }
 
         for (var i = 0; i < modes.Count; i++)
         {
-            if (!string.Equals(ClashModeOptions[i].Mode, modes[i], StringComparison.Ordinal))
+            if (!string.Equals(ModeOptions[i].Mode, modes[i], StringComparison.Ordinal))
             {
                 return false;
             }
@@ -2006,6 +2089,15 @@ public partial class DashboardViewModel : PageViewModelBase
         var port = HttpClientFactory.LocalNativeApiPort > 0 ? HttpClientFactory.LocalNativeApiPort : DefaultSingBoxApiPort;
         return SingBoxDashboardBootstrapService.Configure(port, HttpClientFactory.LocalNativeApiSecret).Url;
     }
+
+    /// <summary>
+    /// Whether the WebUI button can work at all: the running kernel must expose the
+    /// native gRPC API (a version-gated 1.14 feature) on a discovered endpoint.
+    /// Disabled otherwise instead of opening a panel that cannot reach anything.
+    /// </summary>
+    public bool CanOpenSingBoxWebUi =>
+        HttpClientFactory.LocalNativeApiPort > 0 &&
+        CartonApplicationInfo.SupportsNativeApi(CartonApplicationInfo.EffectiveSingBoxVersion);
 
     private bool TryBuildTerminalProxyCommand(string type, out string command, out string error)
     {
@@ -2400,7 +2492,7 @@ public partial class DashboardProfileItemViewModel : ObservableObject
     private bool _isSelected;
 }
 
-public partial class DashboardClashModeOptionViewModel : ObservableObject
+public partial class DashboardModeOptionViewModel : ObservableObject
 {
     [ObservableProperty]
     private string _displayName = string.Empty;

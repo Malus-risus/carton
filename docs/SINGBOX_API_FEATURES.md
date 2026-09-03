@@ -70,6 +70,11 @@
 
 ## 版本兼容备忘
 
+- **default_mode 硬编码 "rule"**：`ProxyModeApiConfig.DefaultMode` 与新建块的
+  `"rule"` 是 sing-box 内置模式（rule/global/direct），内核自身缺省也是 rule，
+  当前无漂移风险；若未来 sing-box 引入可配置的动态默认模式，应改为从
+  `GetClashModeStatus.ModeList` 快照读取。
+
 - carton proto 是 **dev-next 快照**，比 v1.14.0 多 taildrop/openconnect/openvpn RPC、少
   `GetTailscaleCertificate`/`SubscribeNotifications`；`TailscaleEndpointStatus` 字段编号有偏移。
   **carton 实际使用的消息与 v1.14.0 完全兼容**；接入任何 P3/P4 功能前，先把 proto 换成

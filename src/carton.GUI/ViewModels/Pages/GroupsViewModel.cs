@@ -24,7 +24,7 @@ public partial class GroupsViewModel : PageViewModelBase
     private readonly ISingBoxManager? _singBoxManager;
     private readonly IPreferencesService? _preferencesService;
     private readonly SemaphoreSlim _loadSemaphore = new(1, 1);
-    private readonly ClashConfigCacheService _clashConfigCache;
+    private readonly ProxyModeCacheService _proxyModeCache;
     private readonly ObservableCollection<OutboundItemViewModel> _expandedProxyItems = new();
     private readonly HashSet<string> _testingOutboundTags = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, (int Version, IReadOnlyList<OutboundCacheSnapshot> Items)> _collapsedPreviewCache = new(StringComparer.OrdinalIgnoreCase);
@@ -61,7 +61,7 @@ public partial class GroupsViewModel : PageViewModelBase
     public GroupsViewModel()
     {
         InitializePageMetadata("Group", "Navigation.Groups", "Groups");
-        _clashConfigCache = ClashConfigCacheService.Instance;
+        _proxyModeCache = ProxyModeCacheService.Instance;
     }
 
     public GroupsViewModel(ISingBoxManager singBoxManager) : this()
@@ -94,7 +94,7 @@ public partial class GroupsViewModel : PageViewModelBase
         if (_singBoxManager.IsRunning)
         {
             var now = DateTimeOffset.UtcNow;
-            var shouldLoadGroups = _clashConfigCache.IsDirty || _cachedGroups.Count == 0 || isCacheExpired;
+            var shouldLoadGroups = _proxyModeCache.IsDirty || _cachedGroups.Count == 0 || isCacheExpired;
             if (shouldLoadGroups)
             {
                 _lastNavigationApiRefreshAt = now;
@@ -144,7 +144,7 @@ public partial class GroupsViewModel : PageViewModelBase
             return;
         }
 
-        if (_cachedGroups.Count == 0 || _clashConfigCache.IsDirty)
+        if (_cachedGroups.Count == 0 || _proxyModeCache.IsDirty)
         {
             _ = LoadGroupsAsync();
         }
@@ -187,12 +187,12 @@ public partial class GroupsViewModel : PageViewModelBase
             }
 
             var groups = await GetGroupsForReadAsync();
-            var clashConfig = _clashConfigCache.Current;
+            var modeConfig = _proxyModeCache.Current;
             var filteredGroups = new List<OutboundGroup>(groups.Count);
             for (var i = 0; i < groups.Count; i++)
             {
                 var group = groups[i];
-                if (ShouldDisplayGroup(group, clashConfig))
+                if (ShouldDisplayGroup(group, modeConfig))
                 {
                     filteredGroups.Add(group);
                 }
@@ -215,7 +215,7 @@ public partial class GroupsViewModel : PageViewModelBase
                 RestoreViewGroupsFromCache();
                 StatusMessage = CreateLoadedGroupsStatusMessage(Groups.Count);
             });
-            _clashConfigCache.MarkClean();
+            _proxyModeCache.MarkClean();
 
             Dispatcher.UIThread.Post(UpdateSelectOutboundCommandStates);
             Dispatcher.UIThread.Post(UpdateTestDelayCommandStates);
@@ -526,7 +526,7 @@ public partial class GroupsViewModel : PageViewModelBase
         return delay;
     }
 
-    private static bool ShouldDisplayGroup(OutboundGroup group, ApiModeConfigSnapshot? clashConfig)
+    private static bool ShouldDisplayGroup(OutboundGroup group, ApiModeConfigSnapshot? modeConfig)
     {
         if (!string.Equals(group.Tag, "GLOBAL", StringComparison.OrdinalIgnoreCase))
         {
@@ -534,7 +534,7 @@ public partial class GroupsViewModel : PageViewModelBase
         }
 
         var modeCount = 0;
-        var modeList = clashConfig?.ModeList;
+        var modeList = modeConfig?.ModeList;
         if (modeList != null)
         {
             for (var i = 0; i < modeList.Count; i++)
@@ -551,7 +551,7 @@ public partial class GroupsViewModel : PageViewModelBase
             return false;
         }
 
-        return string.Equals(clashConfig?.Mode, "global", StringComparison.OrdinalIgnoreCase);
+        return string.Equals(modeConfig?.Mode, "global", StringComparison.OrdinalIgnoreCase);
     }
 
     private static int CountDisplayableGroups(IReadOnlyList<GroupCacheSnapshot> groups)
@@ -844,12 +844,12 @@ public partial class GroupsViewModel : PageViewModelBase
 
     private async Task ApplyGroupsSnapshotAsync(GroupsSnapshot snapshot)
     {
-        var clashConfig = _clashConfigCache.Current;
+        var modeConfig = _proxyModeCache.Current;
         var groupLookup = new Dictionary<string, OutboundGroup>(snapshot.Groups.Count, StringComparer.OrdinalIgnoreCase);
         for (var i = 0; i < snapshot.Groups.Count; i++)
         {
             var group = snapshot.Groups[i];
-            if (ShouldDisplayGroup(group, clashConfig))
+            if (ShouldDisplayGroup(group, modeConfig))
             {
                 groupLookup[group.Tag] = group;
             }
@@ -1394,7 +1394,7 @@ public partial class GroupsViewModel : PageViewModelBase
         }
 
         var previousSelection = SelectedGroup?.Name;
-        var preferGlobalGroup = string.Equals(_clashConfigCache.Current?.Mode, "global", StringComparison.OrdinalIgnoreCase);
+        var preferGlobalGroup = string.Equals(_proxyModeCache.Current?.Mode, "global", StringComparison.OrdinalIgnoreCase);
         ReleaseViewGroups(clearStatusMessage: false);
         GroupItemViewModel? selected = null;
         GroupItemViewModel? globalGroup = null;

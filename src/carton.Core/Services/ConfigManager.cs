@@ -150,8 +150,7 @@ public class ConfigManager : IConfigManager
     {
       ""type"": ""api"",
       ""tag"": ""carton-api"",
-      ""listen"": ""127.0.0.1"",
-      ""listen_port"": 9090
+      ""listen"": ""127.0.0.1""
     }
   ],
   ""experimental"": {
@@ -163,7 +162,6 @@ public class ConfigManager : IConfigManager
     },
     ""clash_api"": {
       ""external_controller"": """",
-      ""secret"": """",
       ""default_mode"": ""rule""
     }
   }
@@ -328,7 +326,7 @@ public class ConfigManager : IConfigManager
                     Type = "api",
                     Tag = "carton-api",
                     Listen = "127.0.0.1",
-                    ListenPort = options.ApiPort
+                    ListenPort = options.ApiPort > 0 ? options.ApiPort : null
                 }
             },
             Experimental = new ExperimentalConfig
@@ -338,12 +336,12 @@ public class ConfigManager : IConfigManager
                     Enabled = true,
                     Path = "cache.db"
                 },
-                ClashApi = new ClashApiConfig
+                ProxyModeApi = new ProxyModeApiConfig
                 {
                     // Empty external_controller keeps the clash server (mode backend) alive
-                    // without opening the legacy REST listener.
+                    // without opening the legacy REST listener. No secret: sing-box runs
+                    // fine unauthenticated and a secret is never forced into the config.
                     ExternalController = "",
-                    Secret = "",
                     DefaultMode = "rule"
                 }
             }

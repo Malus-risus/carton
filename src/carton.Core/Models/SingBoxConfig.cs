@@ -205,8 +205,10 @@ public class ExperimentalConfig
     [JsonPropertyName("cache_file")]
     public CacheFileConfig? CacheFile { get; set; }
 
+    // JSON 键 "clash_api" 是 sing-box 的配置契约（内核以它决定是否创建模式后端）；
+    // REST 面板相关字段已不再使用，此块仅作为 gRPC 模式 RPC 的后端开关。
     [JsonPropertyName("clash_api")]
-    public ClashApiConfig? ClashApi { get; set; }
+    public ProxyModeApiConfig? ProxyModeApi { get; set; }
 }
 
 public class CacheFileConfig
@@ -235,33 +237,23 @@ public class ServiceConfig
     [JsonPropertyName("listen")]
     public string Listen { get; set; } = "127.0.0.1";
 
+    // No listen_port: the default template omits it so the runtime overlay allocates a
+    // free port dynamically (9091+); hardcoding 9090 would collide with the Clash/mihomo
+    // external-controller default and, being read back as "user-configured", would
+    // never be moved away on bind failure.
     [JsonPropertyName("listen_port")]
-    // Serialization default only: real configs inject the dynamically allocated port
-    // (ProfileConfigOptions.ApiPort / ApiPortPlanner). It only materializes when
-    // deserializing a hand-written services entry without listen_port, where the
-    // explicit user value always wins.
-    public int ListenPort { get; set; } = 9090;
+    public int? ListenPort { get; set; }
 
     [JsonPropertyName("secret")]
     public string? Secret { get; set; }
 }
 
-public class ClashApiConfig
+public class ProxyModeApiConfig
 {
+    // 仅保留 gRPC 模式后端所需字段；external_controller 必须显式置空串（不监听
+    // 旧 REST 面板），external_ui 等旧面板专用字段已随 REST 支持一并移除。
     [JsonPropertyName("external_controller")]
     public string? ExternalController { get; set; }
-
-    [JsonPropertyName("external_ui")]
-    public string? ExternalUi { get; set; }
-
-    [JsonPropertyName("external_ui_download_url")]
-    public string? ExternalUiDownloadUrl { get; set; }
-
-    [JsonPropertyName("external_ui_download_detour")]
-    public string? ExternalUiDownloadDetour { get; set; }
-
-    [JsonPropertyName("secret")]
-    public string? Secret { get; set; }
 
     [JsonPropertyName("default_mode")]
     public string DefaultMode { get; set; } = "rule";

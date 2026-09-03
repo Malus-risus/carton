@@ -79,7 +79,21 @@ carton 已把传输层从 clash REST/WS 换成 sing-box 1.14+ 的原生 gRPC（`
 - **暂不接入**（功能清单 P3/P4）：NetworkQualityTest/STUN（等独立 UI 入口）、
   Tailscale/Taildrop/USB/IP/OpenConnect/OpenVPN 全家（需要 apiVersion≥4 或产品定位外）。
 
+## 后续简化议题（来自外部 review，价值高）
+
+- **原生内置面板**：sing-box v1.14.0 的 api service 原生支持 `dashboard`
+  配置块（`option/api.go:16`，`dashboard: {enabled: true}` 即由 api listener 同源
+  伺服官方面板）——同源意味着**无需任何 CORS 白名单**，carton 的
+  `SingBoxDashboardBootstrapService`（200+ 行、9092 端口代理面板）与本轮的
+  access_control 逻辑均可退役。作为独立议题评估迁移。
+
 ## 自测体系（新增 ✅）
+
+> **已知欠账**：runtime 配置 overlay（约 200 行，长在 DashboardViewModel 的巨型
+> try 块内）零测试覆盖——access_control 取反 bug 正是因此溜过。方向：抽成
+> carton.Core 的 `RuntimeConfigOverlay.Apply(JsonObject root, ...)` 纯函数，
+> 照 ApiPortPlannerTests 范式覆盖 clash_api/cache_file 有无、allow_origin
+> 数组/字符串/缺失、listen_port 有无等矩阵。作为独立重构议题执行。
 
 三层测试金字塔（`dotnet test` 共 195 项，全部通过）：
 1. **纯函数单测**：interval 纳秒换算 / 测速新鲜度判定 / 连接差量合并规则 / 版本门控

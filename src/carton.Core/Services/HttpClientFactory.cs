@@ -42,7 +42,7 @@ public static class HttpClientFactory
     }
 
     /// <summary>
-    /// Client for the local sing-box / Clash API.
+    /// Client for the local sing-box native API (the h2c gRPC daemon endpoint).
     /// </summary>
     public static HttpClient LocalApi => _localApi;
 

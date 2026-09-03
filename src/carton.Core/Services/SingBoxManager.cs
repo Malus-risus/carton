@@ -34,11 +34,11 @@ public interface ISingBoxManager
     /// <summary>Raised after the kernel pushed a new groups snapshot.</summary>
     event EventHandler<GroupsSnapshot>? GroupsUpdated;
 
-    /// <summary>Raised after the kernel pushed a fresh clash mode (including other clients' changes).</summary>
-    event EventHandler<string>? ClashModeChanged;
+    /// <summary>Raised after the kernel pushed a fresh outbound mode (including other clients' changes).</summary>
+    event EventHandler<string>? ModeChanged;
 
-    /// <summary>Latest clash mode pushed by the kernel (null before the first snapshot).</summary>
-    string? CurrentClashMode { get; }
+    /// <summary>Latest outbound mode pushed by the kernel (null before the first snapshot).</summary>
+    string? CurrentMode { get; }
 
     /// <summary>
     /// Raised when the active kernel was rejected by the version gate (older than

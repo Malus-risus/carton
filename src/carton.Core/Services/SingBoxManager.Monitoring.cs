@@ -49,7 +49,7 @@ public partial class SingBoxManager
         if (replacingCanceledMonitors ||
             _connectionsMonitorTask is not { IsCompleted: false } ||
             _groupsMonitorTask is not { IsCompleted: false } ||
-            _clashModeMonitorTask is not { IsCompleted: false })
+            _modeMonitorTask is not { IsCompleted: false })
         {
             StartStreamingMonitors();
         }

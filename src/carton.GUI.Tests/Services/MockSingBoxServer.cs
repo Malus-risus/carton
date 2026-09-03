@@ -455,14 +455,14 @@ public sealed class MockSingBoxServer : StartedService.StartedServiceBase
         }
     }
 
-    private string _currentClashMode = "rule";
+    private string _currentMode = "rule";
 
     public override Task<ClashModeStatus> GetClashModeStatus(Empty request, ServerCallContext context)
     {
         AssertAuthenticated(context);
         return Task.FromResult(new ClashModeStatus
         {
-            CurrentMode = _currentClashMode,
+            CurrentMode = _currentMode,
             ModeList = { "rule", "global", "direct" }
         });
     }
@@ -472,7 +472,7 @@ public sealed class MockSingBoxServer : StartedService.StartedServiceBase
         AssertAuthenticated(context);
         lock (_syncRoot)
         {
-            _currentClashMode = request.Mode;
+            _currentMode = request.Mode;
             _clashModeGate?.TrySetResult(true);
         }
 
@@ -486,7 +486,7 @@ public sealed class MockSingBoxServer : StartedService.StartedServiceBase
         AssertAuthenticated(context);
         // Initial push carries the current mode; every subsequent change (including
         // SetClashMode from any client) pushes the new mode - mirroring the kernel.
-        await responseStream.WriteAsync(new Daemon.ClashMode { Mode = _currentClashMode });
+        await responseStream.WriteAsync(new Daemon.ClashMode { Mode = _currentMode });
         while (!context.CancellationToken.IsCancellationRequested)
         {
             var gate = _clashModeGate;
@@ -507,7 +507,7 @@ public sealed class MockSingBoxServer : StartedService.StartedServiceBase
                     _clashModeGate = null;
                 }
 
-                await responseStream.WriteAsync(new Daemon.ClashMode { Mode = _currentClashMode });
+                await responseStream.WriteAsync(new Daemon.ClashMode { Mode = _currentMode });
             }
         }
     }

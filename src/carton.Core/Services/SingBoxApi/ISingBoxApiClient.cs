@@ -41,10 +41,13 @@ internal interface ISingBoxApiClient
     Task URLTestAsync(string outboundTag);
 
     /// <summary>
-    /// Streams clash mode changes: an initial message with the current mode, then a
+    /// Streams outbound mode changes: an initial message with the current mode, then a
     /// push on every change (including changes made by other control clients).
+    /// The return type keeps the proto-generated wire name (Daemon.ClashMode) per the
+    /// sing-box contract - do NOT rename it; only the C# accessor names were
+    /// de-Clash-ified.
     /// </summary>
-    IAsyncEnumerable<Daemon.ClashMode> SubscribeClashModeStreamAsync(CancellationToken cancellationToken);
+    IAsyncEnumerable<Daemon.ClashMode> SubscribeModeStreamAsync(CancellationToken cancellationToken);
     /// <summary>
     /// Tests every node of a group and returns fresh delays keyed by item tag.
     /// NOTE: testUrl is accepted for signature compatibility only - the sing-box

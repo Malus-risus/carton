@@ -273,7 +273,7 @@ public sealed class SingBoxGrpcWireTests
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
             var modes = new List<string>();
-            await foreach (var mode in harness.Client.SubscribeClashModeStreamAsync(cts.Token))
+            await foreach (var mode in harness.Client.SubscribeModeStreamAsync(cts.Token))
             {
                 modes.Add(mode.Mode);
                 break;
@@ -295,7 +295,7 @@ public sealed class SingBoxGrpcWireTests
             var received = new List<string>();
             var streamTask = Task.Run(async () =>
             {
-                await foreach (var mode in harness.Client.SubscribeClashModeStreamAsync(cts.Token))
+                await foreach (var mode in harness.Client.SubscribeModeStreamAsync(cts.Token))
                 {
                     lock (received)
                     {

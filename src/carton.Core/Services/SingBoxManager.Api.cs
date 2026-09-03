@@ -9,13 +9,13 @@ namespace carton.Core.Services;
 public partial class SingBoxManager
 {
     /// <summary>
-    /// Current clash mode config: the mode list is fetched once (it only changes with
+    /// Current outbound mode config: the mode list is fetched once (it only changes with
     /// the config) and the current mode comes from the push stream cache so repeated
     /// calls do not hit the API at all.
     /// </summary>
     public async Task<ApiModeConfigSnapshot?> GetModeConfigAsync()
     {
-        var modeList = CurrentClashModeList;
+        var modeList = CurrentModeList;
         if (modeList == null)
         {
             var snapshot = await CreateApiClient().GetModeConfigAsync();
@@ -23,10 +23,10 @@ public partial class SingBoxManager
             {
                 lock (_snapshotSyncRoot)
                 {
-                    _currentClashModeList = snapshot.ModeList;
+                    _currentModeList = snapshot.ModeList;
                     if (!string.IsNullOrWhiteSpace(snapshot.Mode))
                     {
-                        _currentClashMode = snapshot.Mode;
+                        _currentMode = snapshot.Mode;
                     }
                 }
 
@@ -38,7 +38,7 @@ public partial class SingBoxManager
 
         return new ApiModeConfigSnapshot
         {
-            Mode = CurrentClashMode,
+            Mode = CurrentMode,
             ModeList = modeList
         };
     }
@@ -51,10 +51,10 @@ public partial class SingBoxManager
             // Optimistic local update; the push stream will confirm/refresh it.
             lock (_snapshotSyncRoot)
             {
-                _currentClashMode = mode;
+                _currentMode = mode;
             }
 
-            ClashModeChanged?.Invoke(this, mode);
+            ModeChanged?.Invoke(this, mode);
         }
 
         return success;

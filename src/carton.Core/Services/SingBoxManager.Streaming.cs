@@ -22,7 +22,7 @@ public partial class SingBoxManager
 {
     private Task? _connectionsMonitorTask;
     private Task? _groupsMonitorTask;
-    private Task? _clashModeMonitorTask;
+    private Task? _modeMonitorTask;
     private ConnectionsSnapshot _connectionsSnapshot = ConnectionsSnapshot.Empty;
     private GroupsSnapshot _groupsSnapshot = GroupsSnapshot.Empty;
     private Dictionary<string, ConnectionSnapshotRow> _connectionRows = new(StringComparer.Ordinal);
@@ -58,36 +58,36 @@ public partial class SingBoxManager
     /// <summary>Raised after the kernel pushed a new groups snapshot.</summary>
     public event EventHandler<GroupsSnapshot>? GroupsUpdated;
 
-    /// <summary>Raised after the kernel pushed a fresh clash mode.</summary>
-    public event EventHandler<string>? ClashModeChanged;
+    /// <summary>Raised after the kernel pushed a fresh outbound mode.</summary>
+    public event EventHandler<string>? ModeChanged;
 
-    /// <summary>Latest clash mode pushed by the kernel (null before the first snapshot).</summary>
-    public string? CurrentClashMode
+    /// <summary>Latest outbound mode pushed by the kernel (null before the first snapshot).</summary>
+    public string? CurrentMode
     {
         get
         {
             lock (_snapshotSyncRoot)
             {
-                return _currentClashMode;
+                return _currentMode;
             }
         }
     }
 
-    private string? _currentClashMode;
+    private string? _currentMode;
 
     /// <summary>Mode list snapshot; null until GetModeConfigAsync succeeded once.</summary>
-    public List<string>? CurrentClashModeList
+    public List<string>? CurrentModeList
     {
         get
         {
             lock (_snapshotSyncRoot)
             {
-                return _currentClashModeList;
+                return _currentModeList;
             }
         }
     }
 
-    private List<string>? _currentClashModeList;
+    private List<string>? _currentModeList;
 
     /// <inheritdoc />
     public event EventHandler<string>? KernelVersionRejected;
@@ -105,9 +105,9 @@ public partial class SingBoxManager
             _groupsMonitorTask = Task.Run(() => StartGroupsMonitorAsync(cancellationToken));
         }
 
-        if (_clashModeMonitorTask is not { IsCompleted: false })
+        if (_modeMonitorTask is not { IsCompleted: false })
         {
-            _clashModeMonitorTask = Task.Run(() => StartClashModeMonitorAsync(cancellationToken));
+            _modeMonitorTask = Task.Run(() => StartModeMonitorAsync(cancellationToken));
         }
     }
 
@@ -216,7 +216,7 @@ public partial class SingBoxManager
         }
     }
 
-    private async Task StartClashModeMonitorAsync(CancellationToken cancellationToken)
+    private async Task StartModeMonitorAsync(CancellationToken cancellationToken)
     {
         var consecutiveFailures = 0;
 
@@ -225,7 +225,7 @@ public partial class SingBoxManager
             try
             {
                 var apiClient = CreateApiClient();
-                await foreach (var message in apiClient.SubscribeClashModeStreamAsync(cancellationToken))
+                await foreach (var message in apiClient.SubscribeModeStreamAsync(cancellationToken))
                 {
                     if (_state.Status != ServiceStatus.Running)
                     {
@@ -241,10 +241,10 @@ public partial class SingBoxManager
 
                     lock (_snapshotSyncRoot)
                     {
-                        _currentClashMode = message.Mode;
+                        _currentMode = message.Mode;
                     }
 
-                    ClashModeChanged?.Invoke(this, message.Mode);
+                    ModeChanged?.Invoke(this, message.Mode);
                 }
 
                 if (_state.Status == ServiceStatus.Running)
@@ -263,7 +263,7 @@ public partial class SingBoxManager
                 consecutiveFailures++;
                 if (consecutiveFailures == 1 || consecutiveFailures % 10 == 0)
                 {
-                    LogManager($"[WARN] Clash mode monitor RPC error: {e.StatusCode} {e.Message}");
+                    LogManager($"[WARN] Outbound mode monitor RPC error: {e.StatusCode} {e.Message}");
                 }
 
                 await DelaySafelyAsync(TimeSpan.FromSeconds(Math.Min(5, consecutiveFailures)), cancellationToken);
@@ -273,7 +273,7 @@ public partial class SingBoxManager
                 consecutiveFailures++;
                 if (consecutiveFailures == 1 || consecutiveFailures % 10 == 0)
                 {
-                    LogManager($"[WARN] Clash mode monitor error: {e.Message}");
+                    LogManager($"[WARN] Outbound mode monitor error: {e.Message}");
                 }
 
                 await DelaySafelyAsync(TimeSpan.FromSeconds(Math.Min(5, Math.Max(1, consecutiveFailures))), cancellationToken);
@@ -430,8 +430,8 @@ public partial class SingBoxManager
             _connectionRows = new Dictionary<string, ConnectionSnapshotRow>(StringComparer.Ordinal);
             _connectionsSnapshot = ConnectionsSnapshot.Empty;
             _groupsSnapshot = GroupsSnapshot.Empty;
-            _currentClashMode = null;
-            _currentClashModeList = null;
+            _currentMode = null;
+            _currentModeList = null;
         }
     }
 

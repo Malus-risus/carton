@@ -17,7 +17,7 @@
       <Setter Property="CornerRadius" Value="16"/>
     </Style>
 
-    <Style Selector="Border.clashModeTrack">
+    <Style Selector="Border.modeTrack">
       <Setter Property="Background" Value="{DynamicResource CartonControlBackgroundBaseLowBrush}"/>
       <Setter Property="CornerRadius" Value="14"/>
       <Setter Property="Padding" Value="4"/>
@@ -89,7 +89,7 @@
       <Setter Property="Opacity" Value="0.7"/>
     </Style>
 
-    <Style Selector="RadioButton.clashModeSegment">
+    <Style Selector="RadioButton.modeSegment">
       <Setter Property="Background" Value="Transparent"/>
       <Setter Property="Foreground" Value="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
       <Setter Property="BorderThickness" Value="0"/>
@@ -114,16 +114,16 @@
       </Setter>
     </Style>
 
-    <Style Selector="RadioButton.clashModeSegment:pointerover">
+    <Style Selector="RadioButton.modeSegment:pointerover">
       <Setter Property="Foreground" Value="{DynamicResource CartonControlForegroundBaseHighBrush}"/>
     </Style>
 
-    <Style Selector="RadioButton.clashModeSegment:checked">
+    <Style Selector="RadioButton.modeSegment:checked">
       <Setter Property="Background" Value="{DynamicResource CartonControlBackgroundChromeMediumBrush}"/>
       <Setter Property="Foreground" Value="{DynamicResource CartonControlForegroundBaseHighBrush}"/>
     </Style>
 
-    <Style Selector="ComboBox.clashModeDropdown /template/ Popup#PART_Popup">
+    <Style Selector="ComboBox.modeDropdown /template/ Popup#PART_Popup">
       <Setter Property="Placement" Value="TopEdgeAlignedLeft"/>
     </Style>
 
@@ -233,15 +233,9 @@
                                 Data="M3 6 H21 V18 H3 Z M6.5 10 L9.5 12 L6.5 14 M11.5 14 H16.5"/>
                     </Button>
                     <Button Classes="iconButton"
-                            IsVisible="{Binding ShowSingBoxWebUiOption}"
-                            IsEnabled="{Binding ShowDashboardMetrics}"
+                            Command="{Binding OpenSingBoxWebUiCommand}"
+                            IsEnabled="{Binding CanOpenSingBoxWebUi}"
                             ToolTip.Tip="{DynamicResource Dashboard.Button.OpenWebUi}">
-                      <Button.Flyout>
-                        <MenuFlyout Placement="Bottom">
-                          <MenuItem Header="{DynamicResource Dashboard.Menu.OpenSingBoxWebUi}"
-                                    Command="{Binding OpenSingBoxWebUiCommand}"/>
-                        </MenuFlyout>
-                      </Button.Flyout>
                       <PathIcon Width="14"
                                 Height="14"
                                 Data="{StaticResource DashboardWebUiIconData}"/>
@@ -471,40 +465,40 @@
                                 Height="16"
                                 Data="M4 4 H10 V10 H4 Z M14 4 H20 V10 H14 Z M4 14 H10 V20 H4 Z M14 14 H20 V20 H14 Z"
                                 VerticalAlignment="Center"/>
-                      <TextBlock Text="{DynamicResource Dashboard.ClashMode}"
+                      <TextBlock Text="{DynamicResource Dashboard.ProxyMode}"
                                  FontSize="17"
                                  FontWeight="Bold"
                                  VerticalAlignment="Center"/>
                     </StackPanel>
 
-                    <Border Classes="clashModeTrack"
-                            IsVisible="{Binding ShowClashModeSegments}">
-                      <ItemsControl ItemsSource="{Binding ClashModeOptions}">
+                    <Border Classes="modeTrack"
+                            IsVisible="{Binding ShowModeSegments}">
+                      <ItemsControl ItemsSource="{Binding ModeOptions}">
                         <ItemsControl.ItemsPanel>
                           <ItemsPanelTemplate>
                             <UniformGrid Rows="1"
-                                         Columns="{Binding ClashModeColumnCount}"/>
+                                         Columns="{Binding ModeColumnCount}"/>
                           </ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
-                          <DataTemplate DataType="vm:DashboardClashModeOptionViewModel">
-                            <RadioButton Classes="clashModeSegment"
+                          <DataTemplate DataType="vm:DashboardModeOptionViewModel">
+                            <RadioButton Classes="modeSegment"
                                          Content="{Binding DisplayName}"
-                                         GroupName="clash-mode"
+                                         GroupName="outbound-mode"
                                          IsChecked="{Binding IsSelected}"
-                                         Command="{Binding $parent[ItemsControl].((vm:DashboardViewModel)DataContext).ChangeClashModeCommand}"
+                                         Command="{Binding $parent[ItemsControl].((vm:DashboardViewModel)DataContext).ChangeModeCommand}"
                                          CommandParameter="{Binding}"/>
                           </DataTemplate>
                         </ItemsControl.ItemTemplate>
                       </ItemsControl>
                     </Border>
 
-                    <ComboBox Classes="clashModeDropdown"
-                              ItemsSource="{Binding ClashModeOptions}"
-                              SelectedItem="{Binding SelectedClashModeOption}"
-                              IsVisible="{Binding UseClashModeDropdown}">
+                    <ComboBox Classes="modeDropdown"
+                              ItemsSource="{Binding ModeOptions}"
+                              SelectedItem="{Binding SelectedModeOption}"
+                              IsVisible="{Binding UseModeDropdown}">
                       <ComboBox.ItemTemplate>
-                        <DataTemplate DataType="vm:DashboardClashModeOptionViewModel">
+                        <DataTemplate DataType="vm:DashboardModeOptionViewModel">
                           <TextBlock Text="{Binding DisplayName}"/>
                         </DataTemplate>
                       </ComboBox.ItemTemplate>
