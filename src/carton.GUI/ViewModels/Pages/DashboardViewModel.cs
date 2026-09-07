@@ -787,22 +787,31 @@ public partial class DashboardViewModel : PageViewModelBase
         StartupStatus = _localizationService["Status.Starting"];
         LogInfo($"Starting with profile: {target.Name} ({target.Id})");
 
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && EnableTunInbound
-            && !await _singBoxManager.IsLinuxCoreAuthorizedAsync())
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && EnableTunInbound)
         {
-            var password = await ShowLinuxPasswordDialogAsync();
-            if (password == null)
+            if (!await PrepareLinuxKernelForTunAsync())
             {
-                StartupStatus = string.Empty;
+                StartupStatus = GetString("Dashboard.Kernel.PrepareFailed", "Failed to prepare kernel for authorization");
+                LogError("Linux kernel authorization failed: unable to copy the built-in kernel to the writable data directory");
                 return;
             }
 
-            var (authSuccess, authError) = await _singBoxManager.AuthorizeCoreOnLinuxAsync(password);
-            if (!authSuccess)
+            if (!await _singBoxManager.IsLinuxCoreAuthorizedAsync())
             {
-                StartupStatus = GetString("Dashboard.Auth.Failed", "Failed to authorize kernel");
-                LogError($"Linux kernel authorization failed: {authError}");
-                return;
+                var password = await ShowLinuxPasswordDialogAsync();
+                if (password == null)
+                {
+                    StartupStatus = string.Empty;
+                    return;
+                }
+
+                var (authSuccess, authError) = await _singBoxManager.AuthorizeCoreOnLinuxAsync(password);
+                if (!authSuccess)
+                {
+                    StartupStatus = GetString("Dashboard.Auth.Failed", "Failed to authorize kernel");
+                    LogError($"Linux kernel authorization failed: {authError}");
+                    return;
+                }
             }
         }
 
@@ -841,6 +850,7 @@ public partial class DashboardViewModel : PageViewModelBase
         var timing = Stopwatch.StartNew();
         LogTiming($"tun_restart.begin tun={targetValue}");
         if (_singBoxManager == null ||
+            _kernelManager == null ||
             _profileManager == null ||
             _configManager == null ||
             _runtimeOperation != DashboardRuntimeOperation.None)
@@ -901,24 +911,35 @@ public partial class DashboardViewModel : PageViewModelBase
             }
             LogTiming($"tun_restart.prepare {prepareTiming.Elapsed.TotalMilliseconds:F0}ms");
 
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && targetValue
-                && !await _singBoxManager.IsLinuxCoreAuthorizedAsync())
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && targetValue)
             {
-                var password = await ShowLinuxPasswordDialogAsync();
-                if (password == null)
+                if (!await PrepareLinuxKernelForTunAsync())
                 {
                     await RevertTunToggleAsync(previousValue);
-                    StartupStatus = string.Empty;
+                    StartupStatus = GetString("Dashboard.Kernel.PrepareFailed", "Failed to prepare kernel for authorization");
+                    LogError("Linux kernel authorization failed during TUN toggle: unable to copy the built-in kernel to the writable data directory");
+                    LogTiming($"tun_restart.failed_kernel_prepare {timing.Elapsed.TotalMilliseconds:F0}ms");
                     return;
                 }
 
-                var (authSuccess, authError) = await _singBoxManager.AuthorizeCoreOnLinuxAsync(password);
-                if (!authSuccess)
+                if (!await _singBoxManager.IsLinuxCoreAuthorizedAsync())
                 {
-                    await RevertTunToggleAsync(previousValue);
-                    StartupStatus = GetString("Dashboard.Auth.Failed", "Failed to authorize kernel");
-                    LogError($"Linux kernel authorization failed during TUN toggle: {authError}");
-                    return;
+                    var password = await ShowLinuxPasswordDialogAsync();
+                    if (password == null)
+                    {
+                        await RevertTunToggleAsync(previousValue);
+                        StartupStatus = string.Empty;
+                        return;
+                    }
+
+                    var (authSuccess, authError) = await _singBoxManager.AuthorizeCoreOnLinuxAsync(password);
+                    if (!authSuccess)
+                    {
+                        await RevertTunToggleAsync(previousValue);
+                        StartupStatus = GetString("Dashboard.Auth.Failed", "Failed to authorize kernel");
+                        LogError($"Linux kernel authorization failed during TUN toggle: {authError}");
+                        return;
+                    }
                 }
             }
 
@@ -1134,6 +1155,31 @@ public partial class DashboardViewModel : PageViewModelBase
                     StartupStatus = string.Empty;
                 }
             }));
+    }
+
+    /// <summary>
+    /// Points the manager at a kernel that can actually be authorized for TUN. On an AppImage
+    /// the bundled kernel sits on a read-only, nosuid mount, so it is promoted to the writable
+    /// data directory first. The running kernel is left alone: promotion only ever renames a
+    /// fresh copy into place, so it stays valid to call before stopping.
+    /// </summary>
+    private async Task<bool> PrepareLinuxKernelForTunAsync()
+    {
+        if (_kernelManager == null || _singBoxManager == null)
+        {
+            return false;
+        }
+
+        if (!await _kernelManager.EnsureWritableKernelAsync())
+        {
+            return false;
+        }
+
+        _singBoxManager.UpdateKernelPath(_kernelManager.KernelPath);
+
+        // Only refreshes the version shown in the UI, so it is kept off the startup path.
+        _ = _kernelManager.GetInstalledKernelInfoAsync();
+        return true;
     }
 
     private async Task<string?> ShowLinuxPasswordDialogAsync()

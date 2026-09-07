@@ -22,6 +22,7 @@ public interface IKernelManager
     Task<string?> GetLatestVersionAsync(DownloadMirror mirror = DownloadMirror.GitHub);
     Task<KernelPackageDownloadResult?> DownloadPackageAsync(string? version = null, DownloadMirror mirror = DownloadMirror.GitHub);
     Task<bool> InstallPackageAsync(KernelPackageDownloadResult package);
+    Task<bool> EnsureWritableKernelAsync();
     Task<bool> DownloadAndInstallAsync(string? version = null, DownloadMirror mirror = DownloadMirror.GitHub);
     Task<bool> InstallCustomKernelAsync(string sourcePath);
     Task<bool> UninstallAsync();
@@ -46,10 +47,19 @@ public sealed class KernelPackageDownloadResult
 public class KernelManager : IKernelManager
 {
     private const string WindowsNaiveProxyRuntimeDll = "libcronet.dll";
+    private const string LinuxNaiveProxyRuntimePattern = "libcronet*.so*";
     private const string BuiltinVersionSuffix = " (builtin)";
+    private const string BuiltinKernelMarkerSuffix = ".builtin-source";
+
+    private const UnixFileMode ExecutableFileMode =
+        UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+        UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+        UnixFileMode.OtherRead | UnixFileMode.OtherExecute;
+
     private readonly string _dataBinDirectory;
     private readonly string _dataKernelPath;
     private readonly string _builtinKernelPath;
+    private readonly string _builtinKernelMarkerPath;
     private readonly HttpClient _httpClient = HttpClientFactory.External;
     private readonly AcceleratedFileDownloader _fileDownloader;
     private readonly IGitHubUpdateCheckStrategyProvider _githubUpdateCheckStrategyProvider;
@@ -82,6 +92,7 @@ public class KernelManager : IKernelManager
         var fileName = $"sing-box{platform.Suffix}";
         _dataKernelPath = Path.Combine(_dataBinDirectory, fileName);
         _builtinKernelPath = Path.Combine(AppContext.BaseDirectory, fileName);
+        _builtinKernelMarkerPath = _dataKernelPath + BuiltinKernelMarkerSuffix;
         _fileDownloader = new AcceleratedFileDownloader(
             _httpClient,
             message => StatusChanged?.Invoke(this, message),
@@ -141,6 +152,162 @@ public class KernelManager : IKernelManager
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Makes sure the active kernel lives in the writable data directory. AppImage payloads
+    /// are mounted read-only and usually with nosuid, so the bundled kernel can never be
+    /// chowned to root or given the setuid bit in place. A kernel the user installed is left
+    /// alone; a copy promoted earlier is refreshed once an app update ships a different
+    /// bundled kernel.
+    /// </summary>
+    public async Task<bool> EnsureWritableKernelAsync()
+    {
+        var activeKernel = ResolveActiveKernel();
+        if (activeKernel == null)
+        {
+            StatusChanged?.Invoke(this, "No sing-box kernel available");
+            return false;
+        }
+
+        if (!activeKernel.IsBuiltin && !IsPromotedBuiltinKernelStale())
+        {
+            return true;
+        }
+
+        try
+        {
+            await PromoteBuiltinKernelAsync();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            StatusChanged?.Invoke(this, $"Failed to prepare writable kernel: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// True when the data directory holds a copy promoted from the bundled kernel and that
+    /// bundled kernel has changed since, which is what an app update looks like. Without the
+    /// marker file the data kernel belongs to the user and must not be overwritten.
+    /// </summary>
+    private bool IsPromotedBuiltinKernelStale()
+    {
+        try
+        {
+            if (!File.Exists(_builtinKernelMarkerPath) || !File.Exists(_builtinKernelPath))
+            {
+                return false;
+            }
+
+            return !string.Equals(
+                File.ReadAllText(_builtinKernelMarkerPath).Trim(),
+                BuildBuiltinKernelIdentity(),
+                StringComparison.Ordinal);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private string BuildBuiltinKernelIdentity()
+    {
+        var info = new FileInfo(_builtinKernelPath);
+        return $"{info.Length}:{info.LastWriteTimeUtc.Ticks}";
+    }
+
+    private async Task PromoteBuiltinKernelAsync()
+    {
+        if (!File.Exists(_builtinKernelPath))
+        {
+            throw new FileNotFoundException("Built-in sing-box kernel not found.", _builtinKernelPath);
+        }
+
+        // Captured before the copy so a kernel replaced midway is not recorded as promoted.
+        var identity = BuildBuiltinKernelIdentity();
+
+        await CopyBuiltinRuntimeSidecarsAsync();
+        await ReplaceExecutableAsync(_builtinKernelPath, _dataKernelPath);
+        TryWriteBuiltinKernelMarker(identity);
+    }
+
+    /// <summary>
+    /// Copies the naiveproxy runtime shipped next to the bundled kernel, which the kernel
+    /// resolves through its own directory (see <see cref="ApplyLinuxLibrarySearchPath"/>).
+    /// The bundled kernel shares a directory with the app itself, so only that known runtime
+    /// is copied instead of every native library that happens to sit there.
+    /// </summary>
+    private async Task CopyBuiltinRuntimeSidecarsAsync()
+    {
+        var sourceDirectory = Path.GetDirectoryName(_builtinKernelPath);
+        if (string.IsNullOrWhiteSpace(sourceDirectory) ||
+            string.Equals(
+                Path.TrimEndingDirectorySeparator(sourceDirectory),
+                Path.TrimEndingDirectorySeparator(_dataBinDirectory),
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var pattern = OperatingSystem.IsWindows() ? WindowsNaiveProxyRuntimeDll : LinuxNaiveProxyRuntimePattern;
+        try
+        {
+            foreach (var runtimeFile in Directory.EnumerateFiles(sourceDirectory, pattern, SearchOption.TopDirectoryOnly))
+            {
+                await ReplaceExecutableAsync(runtimeFile, Path.Combine(_dataBinDirectory, Path.GetFileName(runtimeFile)));
+            }
+        }
+        catch (Exception ex)
+        {
+            // The kernel itself still works without these; only naiveproxy would be affected.
+            StatusChanged?.Invoke(this, $"Failed to copy built-in kernel runtime files: {ex.Message}");
+        }
+    }
+
+    private void TryWriteBuiltinKernelMarker(string identity)
+    {
+        try
+        {
+            File.WriteAllText(_builtinKernelMarkerPath, identity);
+        }
+        catch
+        {
+            // Losing the marker only means the copy is treated as user-managed and stops
+            // being refreshed automatically. It must not fail an otherwise good promotion.
+        }
+    }
+
+    /// <summary>
+    /// Copies a file into place through a temporary file in the same directory, so replacing
+    /// a binary that is currently running is a rename instead of a write. rename(2) only swaps
+    /// the directory entry, leaving the running process on its own inode, while writing to it
+    /// directly would fail with ETXTBSY.
+    /// </summary>
+    private static async Task ReplaceExecutableAsync(string sourcePath, string destinationPath)
+    {
+        var temporaryPath = $"{destinationPath}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            await using (var source = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 81920, useAsync: true))
+            await using (var destination = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, bufferSize: 81920, useAsync: true))
+            {
+                await source.CopyToAsync(destination);
+            }
+
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(temporaryPath, ExecutableFileMode);
+            }
+
+            File.Move(temporaryPath, destinationPath, overwrite: true);
+        }
+        finally
+        {
+            // Only still present when the copy or the move failed partway through.
+            TryDeleteFile(temporaryPath);
+        }
     }
 
     private static string FormatDisplayVersion(string? version, bool isBuiltin)
@@ -458,6 +625,9 @@ public class KernelManager : IKernelManager
                 }
             }
 
+            // The data kernel now belongs to the user, so it must never be replaced by the
+            // bundled one on the next TUN authorization.
+            TryDeleteFile(_builtinKernelMarkerPath);
             await GetInstalledKernelInfoAsync();
             StatusChanged?.Invoke(this, $"Successfully installed sing-box {versionLabel}");
             return true;
@@ -962,6 +1132,7 @@ public class KernelManager : IKernelManager
                 Process.Start("chmod", $"+x \"{targetExe}\"")?.WaitForExit();
             }
 
+            TryDeleteFile(_builtinKernelMarkerPath);
             await GetInstalledKernelInfoAsync();
             StatusChanged?.Invoke(this, "Successfully installed custom kernel");
 
@@ -984,6 +1155,8 @@ public class KernelManager : IKernelManager
                 File.Delete(_dataKernelPath);
                 removedAny = true;
             }
+
+            TryDeleteFile(_builtinKernelMarkerPath);
 
             foreach (var dllPath in Directory.EnumerateFiles(_dataBinDirectory, "*.dll", SearchOption.TopDirectoryOnly))
             {
