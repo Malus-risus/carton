@@ -789,7 +789,10 @@ public partial class DashboardViewModel : PageViewModelBase
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && EnableTunInbound)
         {
-            if (!await PrepareLinuxKernelForTunAsync())
+            // Only the AppImage payload is mounted read-only with nosuid: its bundled kernel
+            // must be promoted to the writable data directory before setuid can be applied.
+            // A portable install already sits on a writable filesystem and is authorized in place.
+            if (IsLinuxAppImageRuntime() && !await PrepareLinuxKernelForTunAsync())
             {
                 StartupStatus = GetString("Dashboard.Kernel.PrepareFailed", "Failed to prepare kernel for authorization");
                 LogError("Linux kernel authorization failed: unable to copy the built-in kernel to the writable data directory");
@@ -913,7 +916,9 @@ public partial class DashboardViewModel : PageViewModelBase
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && targetValue)
             {
-                if (!await PrepareLinuxKernelForTunAsync())
+                // Only the AppImage payload needs its kernel promoted to a writable location
+                // before setuid can be applied; portable installs are authorized in place.
+                if (IsLinuxAppImageRuntime() && !await PrepareLinuxKernelForTunAsync())
                 {
                     await RevertTunToggleAsync(previousValue);
                     StartupStatus = GetString("Dashboard.Kernel.PrepareFailed", "Failed to prepare kernel for authorization");
@@ -1155,6 +1160,22 @@ public partial class DashboardViewModel : PageViewModelBase
                     StartupStatus = string.Empty;
                 }
             }));
+    }
+
+    /// <summary>
+    /// Detects the standard AppImage runtime environment, which exports the absolute path of
+    /// the running .AppImage file via the APPIMAGE variable. Some environments (e.g. AppImageLauncher)
+    /// also export it, but a nonexistent path is treated as not running from an AppImage.
+    /// </summary>
+    private static bool IsLinuxAppImageRuntime()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            return false;
+        }
+
+        var appImagePath = Environment.GetEnvironmentVariable("APPIMAGE");
+        return !string.IsNullOrWhiteSpace(appImagePath) && File.Exists(appImagePath);
     }
 
     /// <summary>
