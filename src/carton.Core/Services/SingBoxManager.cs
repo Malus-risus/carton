@@ -398,7 +398,7 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
             LogTiming("start.process_started", processStartTiming.Elapsed);
 
             var readyTiming = Stopwatch.StartNew();
-            var ready = await WaitForApiReadyAsync(null, TimeSpan.FromSeconds(25));
+            var ready = await WaitForApiReadyAsync(null, TimeSpan.FromSeconds(30));
             LogTiming(ready ? "start.api_ready" : "start.api_not_ready", readyTiming.Elapsed);
             if (!ready)
             {
@@ -418,6 +418,10 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
                 }
 
                 var msg = "sing-box API did not become reachable in time";
+                if (!_errorOutput.IsEmpty)
+                {
+                    msg += $":\n{string.Join("\n", _errorOutput)}";
+                }
                 LogManager($"[ERROR] {msg}");
                 await CleanupFailedStartAttemptAsync();
                 SetError(msg);

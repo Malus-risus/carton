@@ -100,7 +100,7 @@ public partial class SingBoxManager
             var readyTiming = Stopwatch.StartNew();
             var ready = await WaitForApiReadyAsync(
                 pid,
-                TimeSpan.FromSeconds(30));
+                TimeSpan.FromSeconds(35));
             LogTiming(ready ? "start_elevated.api_ready" : "start_elevated.api_not_ready", readyTiming.Elapsed);
             if (!ready)
             {

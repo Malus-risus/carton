@@ -30,8 +30,8 @@ public sealed class ProxyItemControl : Control
     private const double ToolTipHorizontalPadding = 24;
     private const double ToolTipOffset = 12;
 
-    private static readonly FontFamily TextFontFamily = new("Inter,Segoe UI,avares://carton/Assets/Fonts#Twemoji COLRv0,Segoe UI Emoji");
-    private static readonly FontFamily EmojiFontFamily = new("avares://carton/Assets/Fonts#Twemoji COLRv0");
+    private static readonly FontFamily TextFontFamily = FontFamily.Default;
+    private static readonly FontFamily EmojiFontFamily = new("avares://carton/Assets/Fonts#Twemoji COLRv0,Segoe UI Emoji");
     private static readonly Typeface TitleTypeface = new(TextFontFamily, FontStyle.Normal, FontWeight.SemiBold, FontStretch.Normal);
     private static readonly Typeface EmojiTypeface = new(EmojiFontFamily);
     private static readonly Typeface MetadataTypeface = new(TextFontFamily);

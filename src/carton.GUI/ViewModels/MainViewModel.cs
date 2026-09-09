@@ -1026,6 +1026,11 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private async Task ToggleConnection()
     {
+        if (DashboardViewModel == null)
+        {
+            return;
+        }
+
         if (!IsKernelInstalled)
         {
             var mirror = SelectedKernelDownloadMirror;
@@ -1036,53 +1041,13 @@ public partial class MainViewModel : ViewModelBase
             return;
         }
 
-        if (_singBoxManager.IsRunning)
+        if (IsConnected)
         {
-            await _singBoxManager.StopAsync();
+            await DashboardViewModel.StopConnectionCommand.ExecuteAsync(null);
         }
         else
         {
-            var selectedId = await _profileManager.GetSelectedProfileIdAsync();
-            string configPath;
-
-            if (selectedId > 0)
-            {
-                var profile = await _profileManager.GetAsync(selectedId);
-                if (profile == null)
-                {
-                    _logStore.AddLog("[ERROR] Selected profile not found");
-                    ConnectionStatus = _localizationService["Status.ConfigMissing"];
-                    return;
-                }
-
-                configPath = await EnsureProfileConfigPathForStartAsync(profile) ?? string.Empty;
-                if (string.IsNullOrWhiteSpace(configPath))
-                {
-                    ConnectionStatus = profile.Type == ProfileType.Remote
-                        ? GetString("Status.RemoteConfigUnavailable", "Remote config unavailable")
-                        : _localizationService["Status.ConfigMissing"];
-                    return;
-                }
-
-                if (!File.Exists(configPath))
-                {
-                    _logStore.AddLog("[ERROR] Selected profile config file not found");
-                    ConnectionStatus = _localizationService["Status.ConfigMissing"];
-                    return;
-                }
-            }
-            else
-            {
-                _logStore.AddLog("[INFO] No profile selected, please select a profile first");
-                SelectedPage = NavigationPage.Profiles;
-                return;
-            }
-
-            var success = await _singBoxManager.StartAsync(configPath);
-            if (!success)
-            {
-                ConnectionStatus = BuildStartFailureStatus();
-            }
+            await DashboardViewModel.StartWithSelectedProfileCommand.ExecuteAsync(null);
         }
     }
 

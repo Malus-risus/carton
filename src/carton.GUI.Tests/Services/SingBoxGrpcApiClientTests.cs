@@ -121,4 +121,24 @@ public sealed class SingBoxGrpcApiClientTests
 
         Assert.Equal(2, remaining.Count);
     }
+
+    [Fact]
+    public void CreateSocketsHttpHandler_DisablesProxyAndEnablesHttp2Multiplexing()
+    {
+        using var handler = SingBoxGrpcApiClient.CreateSocketsHttpHandler();
+        Assert.False(handler.UseProxy);
+        Assert.True(handler.EnableMultipleHttp2Connections);
+    }
+
+    [Fact]
+    public async Task IsReachableAsync_WhenUnreachable_LogsTargetAddress()
+    {
+        string? loggedMessage = null;
+        carton.Core.Services.HttpClientFactory.UpdateLocalNativeApi("127.0.0.1", 59998, null);
+        using var client = new SingBoxGrpcApiClient(msg => loggedMessage = msg);
+        var reachable = await client.IsReachableAsync();
+        Assert.False(reachable);
+        Assert.NotNull(loggedMessage);
+        Assert.Contains("http://127.0.0.1:59998", loggedMessage);
+    }
 }

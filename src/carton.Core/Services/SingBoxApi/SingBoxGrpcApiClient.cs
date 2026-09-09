@@ -92,13 +92,7 @@ internal sealed class SingBoxGrpcApiClient : ISingBoxApiClient, IDisposable
                 _channel?.Dispose();
                 _channel = GrpcChannel.ForAddress(address, new GrpcChannelOptions
                 {
-                    HttpHandler = new SocketsHttpHandler
-                    {
-                        EnableMultipleHttp2Connections = true,
-                        PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
-                        KeepAlivePingDelay = TimeSpan.FromSeconds(15),
-                        KeepAlivePingTimeout = TimeSpan.FromSeconds(5),
-                    },
+                    HttpHandler = CreateSocketsHttpHandler(),
                     DisposeHttpClient = true
                 });
                 _client = new StartedService.StartedServiceClient(_channel);
@@ -114,6 +108,15 @@ internal sealed class SingBoxGrpcApiClient : ISingBoxApiClient, IDisposable
             return (_client!, headers);
         }
     }
+
+    internal static SocketsHttpHandler CreateSocketsHttpHandler() => new()
+    {
+        UseProxy = false,
+        EnableMultipleHttp2Connections = true,
+        PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
+        KeepAlivePingDelay = TimeSpan.FromSeconds(15),
+        KeepAlivePingTimeout = TimeSpan.FromSeconds(5),
+    };
 
     /// <summary>
     /// Returns the (version, apiVersion) pair reported by the running kernel, or null
@@ -158,9 +161,11 @@ internal sealed class SingBoxGrpcApiClient : ISingBoxApiClient, IDisposable
 
     public async Task<bool> IsReachableAsync()
     {
+        var target = string.Empty;
         try
         {
             var (client, headers) = GetClient();
+            target = _cachedAddress;
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
             var version = await client.GetVersionAsync(
                 new Empty(),
@@ -176,7 +181,7 @@ internal sealed class SingBoxGrpcApiClient : ISingBoxApiClient, IDisposable
         }
         catch (Exception ex)
         {
-            _log?.Invoke($"[DEBUG] gRPC IsReachable check failed: {ex.Message}");
+            _log?.Invoke($"[DEBUG] gRPC IsReachable check failed ({target}): {ex.Message}");
             return false;
         }
     }
