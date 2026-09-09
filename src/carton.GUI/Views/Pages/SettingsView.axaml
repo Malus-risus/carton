@@ -349,12 +349,12 @@
                          TextTrimming="CharacterEllipsis"
                          MaxLines="1"/>
             </StackPanel>
-            <TextBlock Grid.Column="1"
-                       Text="&#xE838;"
-                       FontFamily="Segoe Fluent Icons"
-                       FontSize="16"
-                       Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"
-                       VerticalAlignment="Center"/>
+            <PathIcon Grid.Column="1"
+                     Width="16"
+                     Height="16"
+                     Data="F1 M4.5,3 C3.11929,3 2,4.11929 2,5.5 L2,12.4714 3.56839,9.75488 C4.1936,8.67198 5.34905,8.00488 6.59948,8.00488 L16,8.00488 16,7.5 C16,6.11929 14.8807,5 13.5,5 L9.70711,5 8.14645,3.43934 C7.86514,3.15804 7.48361,3 7.08579,3 L4.5,3 Z M4.43441,10.2549 C4.88099,9.48138 5.70631,9.00488 6.59948,9.00488 L16.9953,9.00488 C18.5349,9.00488 19.4972,10.6715 18.7274,12.0049 L16.5651,15.75 C16.1186,16.5235 15.2932,17 14.4001,17 L4.00422,17 C2.46462,17 1.50237,15.3333 2.27217,14 L4.43441,10.2549 Z"
+                     Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"
+                     VerticalAlignment="Center"/>
           </Grid>
         </Button>
 
@@ -416,7 +416,7 @@
                              Description="{DynamicResource Settings.Appearance.ThemeAccent.Description}"
                              IsExpanded="{Binding IsThemeAccentExpanded, Mode=TwoWay}">
           <ui:SettingsExpander.IconSource>
-            <ui:FontIconSource FontFamily="Segoe Fluent Icons" Glyph="&#xE790;" />
+            <ui:PathIconSource Data="F1 M10.0001,2 C14.4183,2 18.0001,5.58173 18.0001,10 C18.0001,13.2082 16.1115,15.9741 13.3878,17.249 C12.3008,17.7577 11.0605,17.6889 10.0967,17.1904 C9.12364,16.687 8.40074,15.7226 8.44927,14.459 C8.4664,14.0135 8.53077,13.592 8.59185,13.2158 C8.65471,12.8288 8.71048,12.5037 8.72857,12.2012 C8.74633,11.9042 8.72419,11.6683 8.65045,11.4688 C8.57968,11.2775 8.44998,11.0878 8.20025,10.9004 C7.88713,10.6656 7.6204,10.6251 7.35552,10.6631 C7.05544,10.7063 6.74113,10.8511 6.34087,11.0498 C5.60626,11.4146 4.56548,11.9917 3.36724,11.3818 C2.26494,10.8203 1.94347,9.51436 2.14751,8.46485 C2.86375,4.78113 6.10661,2.00013 10.0001,2 Z M12.5001,13 C11.9479,13.0001 11.5001,13.4478 11.5001,14 C11.5001,14.5522 11.9479,14.9999 12.5001,15 C13.0523,15 13.5001,14.5523 13.5001,14 C13.5001,13.4477 13.0523,13 12.5001,13 Z M14.5001,10.5 C13.9479,10.5001 13.5001,10.9478 13.5001,11.5 C13.5001,12.0522 13.9479,12.4999 14.5001,12.5 C15.0523,12.5 15.5001,12.0523 15.5001,11.5 C15.5001,10.9477 15.0523,10.5 14.5001,10.5 Z M14.5001,7.5 C13.9478,7.50007 13.5001,7.94776 13.5001,8.50001 C13.5001,9.05225 13.9478,9.49994 14.5001,9.50001 C15.0523,9.50001 15.5001,9.05229 15.5001,8.50001 C15.5001,7.94772 15.0523,7.5 14.5001,7.5 Z M12.5001,5 C11.9478,5.00007 11.5001,5.44776 11.5001,6 C11.5001,6.55225 11.9478,6.99994 12.5001,7 C13.0523,7 13.5001,6.55229 13.5001,6 C13.5001,5.44772 13.0523,5 12.5001,5 Z M9.50006,4 C8.94783,4.00007 8.50006,4.44776 8.50006,5 C8.50006,5.55225 8.94783,5.99994 9.50006,6 C10.0523,6 10.5001,5.55229 10.5001,5 C10.5001,4.44772 10.0523,4 9.50006,4 Z" />
           </ui:SettingsExpander.IconSource>
           <ui:SettingsExpander.Footer>
             <StackPanel Orientation="Horizontal"
@@ -500,12 +500,12 @@
                                         VerticalAlignment="Top"
                                         Margin="0,2,2,0"
                                         IsVisible="{Binding IsSelected}">
-                                  <TextBlock Text="&#xE73E;"
-                                             FontFamily="Segoe Fluent Icons"
-                                             FontSize="12"
-                                             Foreground="{DynamicResource SystemAccentColor}"
-                                             HorizontalAlignment="Center"
-                                             VerticalAlignment="Center"/>
+                                  <PathIcon Width="12"
+                                            Height="12"
+                                            Data="F1 M7.03212,13.9072 L3.56056,10.0017 C3.28538,9.69214 2.81132,9.66425 2.50174,9.93944 C2.19215,10.2146 2.16426,10.6887 2.43945,10.9983 L6.43945,15.4983 C6.72614,15.8208 7.2252,15.8355 7.53034,15.5303 L18.0303,5.03033 C18.3232,4.73744 18.3232,4.26256 18.0303,3.96967 C17.7374,3.67678 17.2626,3.67678 16.9697,3.96967 L7.03212,13.9072 Z"
+                                            Foreground="{DynamicResource SystemAccentColor}"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"/>
                                 </Border>
                               </Panel>
                             </Button>
@@ -758,7 +758,7 @@
         <ui:SettingsExpander Header="{DynamicResource Settings.Data.Directory}"
                              IsExpanded="False">
           <ui:SettingsExpander.IconSource>
-            <ui:FontIconSource FontFamily="Segoe Fluent Icons" Glyph="&#xE7F1;" />
+            <ui:PathIconSource Data="F1 M2,5.5 C2,4.11929 3.11929,3 4.5,3 L6.98223,3 C7.44636,3 7.89148,3.18437 8.21967,3.51256 L9.5,4.79289 7.43934,6.85355 C7.34557,6.94732 7.21839,7 7.08579,7 L2,7 2,5.5 Z M2,8 L2,14.5 C2,15.8807 3.11929,17 4.5,17 L15.5,17 C16.8807,17 18,15.8807 18,14.5 L18,7.5 C18,6.11929 16.8807,5 15.5,5 L10.7071,5 8.14645,7.56066 C7.86514,7.84196 7.48361,8 7.08579,8 L2,8 Z" />
           </ui:SettingsExpander.IconSource>
 
           <ui:SettingsExpanderItem ActionIconSource="Open"
