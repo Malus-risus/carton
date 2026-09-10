@@ -45,6 +45,7 @@ public partial class DashboardViewModel : PageViewModelBase
     private readonly IPreferencesService? _preferencesService;
     private readonly Action<string, int>? _toastWriter;
     private readonly Action<string>? _logWriter;
+    private readonly Func<Task>? _profilesChangedCallback;
     private readonly ILocalizationService _localizationService;
     private readonly ProxyModeCacheService _proxyModeCache;
     private string? _currentMode;
@@ -458,7 +459,8 @@ public partial class DashboardViewModel : PageViewModelBase
         IConfigManager configManager,
         IPreferencesService preferencesService,
         Action<string, int>? toastWriter = null,
-        Action<string>? logWriter = null) : this()
+        Action<string>? logWriter = null,
+        Func<Task>? profilesChangedCallback = null) : this()
     {
         _singBoxManager = singBoxManager;
         _kernelManager = kernelManager;
@@ -468,6 +470,7 @@ public partial class DashboardViewModel : PageViewModelBase
         _preferencesService = preferencesService;
         _toastWriter = toastWriter;
         _logWriter = logWriter;
+        _profilesChangedCallback = profilesChangedCallback;
         _kernelManager.InstalledKernelChanged += OnInstalledKernelChanged;
         _singBoxManager.StatusChanged += OnStatusChanged;
         _singBoxManager.TrafficUpdated += OnTrafficUpdated;
@@ -1413,6 +1416,7 @@ public partial class DashboardViewModel : PageViewModelBase
                 : GetString("Status.RemoteConfigDownloaded", "Remote config downloaded");
             StartupStatus = completedMessage;
             LogInfo($"{completedMessage}: {profileName} ({profile.Id})");
+            await NotifyProfilesChangedAsync();
             return (result.ConfigPath, false);
         }
         catch (Exception ex)
@@ -1479,6 +1483,7 @@ public partial class DashboardViewModel : PageViewModelBase
         if (result.Success)
         {
             await LoadProfilesAsync();
+            await NotifyProfilesChangedAsync();
             var completedMessage = GetString(
                 "Status.RemoteConfigRefreshedViaProxy",
                 "Remote config refreshed via the local mixed proxy.");
@@ -2543,6 +2548,14 @@ public partial class DashboardViewModel : PageViewModelBase
     private static string NormalizeLogLevel(string? level)
     {
         return SingBoxLogLevelHelper.Normalize(level);
+    }
+
+    private async Task NotifyProfilesChangedAsync()
+    {
+        if (_profilesChangedCallback != null)
+        {
+            await _profilesChangedCallback();
+        }
     }
 
 }

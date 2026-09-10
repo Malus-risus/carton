@@ -202,7 +202,15 @@ public partial class MainViewModel : ViewModelBase
         _singBoxManager.KernelLogsReset += OnKernelLogsReset;
         _singBoxManager.KernelVersionRejected += OnKernelVersionRejected;
 
-        DashboardViewModel = new DashboardViewModel(_singBoxManager, _kernelManager, _profileManager, _configManager, _preferencesService, ShowToast, _logStore.AddLog);
+        DashboardViewModel = new DashboardViewModel(
+            _singBoxManager,
+            _kernelManager,
+            _profileManager,
+            _configManager,
+            _preferencesService,
+            ShowToast,
+            _logStore.AddLog,
+            RefreshProfilesPageAsync);
         _lazyGroupsViewModel = new Lazy<GroupsViewModel>(() => new GroupsViewModel(_singBoxManager, _preferencesService));
         _appUpdateService = new AppUpdateService("https://github.com/821869798/carton", null, _logStore.AddLog, githubUpdateCheckStrategyProvider);
         _appUpdateCoordinator = new AppUpdateCoordinator(_appUpdateService, _localizationService);
@@ -646,6 +654,16 @@ public partial class MainViewModel : ViewModelBase
             DashboardViewModel.LoadProfilesAsync,
             ShowToast);
         return _profilesViewModel;
+    }
+
+    private async Task RefreshProfilesPageAsync()
+    {
+        if (_profilesViewModel == null)
+        {
+            return;
+        }
+
+        await _profilesViewModel.RefreshAsync();
     }
 
     public void ShowToast(string message, int durationMilliseconds = 2400)

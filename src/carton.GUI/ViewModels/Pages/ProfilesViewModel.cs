@@ -280,11 +280,13 @@ public partial class ProfilesViewModel : PageViewModelBase, IDisposable
 
         var profiles = await _profileManager.ListAsync();
         var selectedId = await _profileManager.GetSelectedProfileIdAsync();
+        var editingProfileId = _editingProfile?.Id;
 
         await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
         {
             Profiles.Clear();
             SelectedProfile = null;
+            ProfileItemViewModel? editingProfile = null;
             foreach (var profile in profiles)
             {
                 var vm = new ProfileItemViewModel
@@ -306,11 +308,22 @@ public partial class ProfilesViewModel : PageViewModelBase, IDisposable
                 {
                     SelectedProfile = vm;
                 }
+
+                if (editingProfileId == profile.Id)
+                {
+                    editingProfile = vm;
+                    EditLastUpdated = profile.LastUpdated?.ToString("yyyy-MM-dd HH:mm:ss") ?? _neverLabel;
+                }
             }
 
             if (SelectedProfile == null && Profiles.Count > 0)
             {
                 SelectedProfile = Profiles[0];
+            }
+
+            if (IsEditingMode)
+            {
+                _editingProfile = editingProfile;
             }
         });
     }
@@ -827,7 +840,6 @@ public partial class ProfilesViewModel : PageViewModelBase, IDisposable
             if (profile != null)
             {
                 profile.Name = NewProfileName;
-                profile.LastUpdated = DateTime.Now;
                 if (profile.Type == ProfileType.Remote)
                 {
                     var updateInterval = ParseUpdateIntervalMinutes();
