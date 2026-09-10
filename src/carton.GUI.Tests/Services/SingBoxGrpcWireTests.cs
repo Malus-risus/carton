@@ -12,6 +12,7 @@ namespace carton.GUI.Tests.Services;
 /// These verify the full chain - protobuf serialization, h2c transport, Bearer auth,
 /// streaming semantics and the interval unit contract - without a real kernel.
 /// </summary>
+[Collection(SingBoxApiGlobalStateCollection.Name)]
 public sealed class SingBoxGrpcWireTests
 {
     private sealed class TestHarness : IAsyncDisposable

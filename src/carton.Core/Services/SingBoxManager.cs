@@ -107,6 +107,14 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
     private readonly ConcurrentQueue<string> _errorOutput = new();
     private int? _elevatedPid;
     private const int MaxErrorOutputLines = 80;
+    private const int MaxKernelOutputSummaryLines = 5;
+    /// <summary>
+    /// API readiness budget for a plain start. A TUN config gets extra headroom on
+    /// every start path (elevated, or setuid on Linux) because device setup makes the
+    /// kernel cold start slower.
+    /// </summary>
+    private static readonly TimeSpan ApiReadyTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan TunApiReadyTimeout = TimeSpan.FromSeconds(35);
     private int _startupLogCaptureSession;
     private bool _captureStartupOutputForUi;
     private long _windowsStartupLogSequence;
@@ -288,7 +296,10 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
             LogManager($"[INFO] Starting sing-box with config: {configPath}");
             LogManager($"[INFO] Binary path: {_singBoxPath}");
 
-            if (RequiresElevatedPrivileges(configPath))
+            // "Config has a TUN inbound" — a Linux setuid kernel still takes the plain
+            // start path below, so this is not the same as "we are about to elevate".
+            var hasTunInbound = RequiresElevatedPrivileges(configPath);
+            if (hasTunInbound)
             {
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && await IsLinuxCoreAuthorizedAsync())
                 {
@@ -369,9 +380,10 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
                     if (_state.Status == ServiceStatus.Running || _state.Status == ServiceStatus.Starting)
                     {
                         var errorMsg = $"sing-box exited with code {exitCode}";
-                        if (!_errorOutput.IsEmpty)
+                        var summary = BuildKernelOutputSummary();
+                        if (summary.Length > 0)
                         {
-                            errorMsg += $": {string.Join("\n", _errorOutput)}";
+                            errorMsg += $": {summary}";
                         }
                         LogManager($"[ERROR] {errorMsg}");
                         SetError(errorMsg);
@@ -398,7 +410,7 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
             LogTiming("start.process_started", processStartTiming.Elapsed);
 
             var readyTiming = Stopwatch.StartNew();
-            var ready = await WaitForApiReadyAsync(null, TimeSpan.FromSeconds(30));
+            var ready = await WaitForApiReadyAsync(null, hasTunInbound ? TunApiReadyTimeout : ApiReadyTimeout);
             LogTiming(ready ? "start.api_ready" : "start.api_not_ready", readyTiming.Elapsed);
             if (!ready)
             {
@@ -407,9 +419,10 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
                 {
                     var exitCode = _process.ExitCode;
                     var errorMsg = $"sing-box process exited unexpectedly with code {exitCode}";
-                    if (!_errorOutput.IsEmpty)
+                    var exitSummary = BuildKernelOutputSummary();
+                    if (exitSummary.Length > 0)
                     {
-                        errorMsg += $"\n{string.Join("\n", _errorOutput)}";
+                        errorMsg += $"\n{exitSummary}";
                     }
                     LogManager($"[ERROR] {errorMsg}");
                     await CleanupFailedStartAttemptAsync();
@@ -418,9 +431,12 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
                 }
 
                 var msg = "sing-box API did not become reachable in time";
-                if (!_errorOutput.IsEmpty)
+                // The full capture is already on the kernel log channel; the status
+                // line only gets the diagnostic tail so the UI is not flooded.
+                var summary = BuildKernelOutputSummary();
+                if (summary.Length > 0)
                 {
-                    msg += $":\n{string.Join("\n", _errorOutput)}";
+                    msg += $":\n{summary}";
                 }
                 LogManager($"[ERROR] {msg}");
                 await CleanupFailedStartAttemptAsync();
@@ -820,6 +836,72 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
         while (_errorOutput.Count > MaxErrorOutputLines && _errorOutput.TryDequeue(out _))
         {
         }
+    }
+
+    /// <summary>
+    /// Condenses the buffered kernel output for the status line: the last few
+    /// warn/error/fatal lines when there are any, otherwise the last few lines as-is.
+    /// The full capture is on the kernel log channel already.
+    /// </summary>
+    private string BuildKernelOutputSummary()
+    {
+        return SummarizeKernelOutput(_errorOutput.ToArray(), MaxKernelOutputSummaryLines);
+    }
+
+    internal static string SummarizeKernelOutput(IReadOnlyList<string> lines, int maxLines)
+    {
+        if (lines.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var diagnostics = lines.Where(IsKernelDiagnosticLine).ToList();
+        IEnumerable<string> source = diagnostics.Count > 0 ? diagnostics : lines;
+        return string.Join("\n", source.TakeLast(maxLines));
+    }
+
+    /// <summary>
+    /// True when a raw kernel console line carries a warn-or-worse level. sing-box
+    /// prints the upper-case level first ("ERROR ...", "ERROR[0042] ...") or right
+    /// after the optional "-0700 2006-01-02 15:04:05" timestamp, and Go panics start
+    /// with "panic:". Only the first recognised level token decides, so a level word
+    /// inside the message (node names, URLs) does not turn an INFO line into a hit.
+    /// </summary>
+    internal static bool IsKernelDiagnosticLine(string line)
+    {
+        var remaining = line.AsSpan();
+        for (var i = 0; i < 4 && !remaining.IsEmpty; i++)
+        {
+            remaining = remaining.TrimStart();
+            var end = remaining.IndexOf(' ');
+            var token = end < 0 ? remaining : remaining[..end];
+            remaining = end < 0 ? ReadOnlySpan<char>.Empty : remaining[(end + 1)..];
+
+            var cut = token.IndexOfAny('[', ':');
+            if (cut >= 0)
+            {
+                token = token[..cut];
+            }
+
+            if (IsKernelLevelToken(token))
+            {
+                return IsRuntimeDiagnosticLevel(token.ToString());
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsKernelLevelToken(ReadOnlySpan<char> token)
+    {
+        return token.Equals("TRACE", StringComparison.OrdinalIgnoreCase) ||
+               token.Equals("DEBUG", StringComparison.OrdinalIgnoreCase) ||
+               token.Equals("INFO", StringComparison.OrdinalIgnoreCase) ||
+               token.Equals("WARN", StringComparison.OrdinalIgnoreCase) ||
+               token.Equals("WARNING", StringComparison.OrdinalIgnoreCase) ||
+               token.Equals("ERROR", StringComparison.OrdinalIgnoreCase) ||
+               token.Equals("FATAL", StringComparison.OrdinalIgnoreCase) ||
+               token.Equals("PANIC", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

@@ -67,7 +67,24 @@ internal sealed class SingBoxGrpcApiClient : ISingBoxApiClient, IDisposable
         _log = log;
     }
 
-    private (StartedService.StartedServiceClient Client, Metadata Headers) GetClient()
+    /// <summary>
+    /// Everything one RPC needs. Address is the endpoint the returned client is bound
+    /// to, captured under the channel lock so diagnostics never report a stale value.
+    /// </summary>
+    private readonly record struct ApiCallContext(
+        StartedService.StartedServiceClient Client,
+        Metadata Headers,
+        string Address)
+    {
+        // Most call sites only care about the client and headers.
+        public void Deconstruct(out StartedService.StartedServiceClient client, out Metadata headers)
+        {
+            client = Client;
+            headers = Headers;
+        }
+    }
+
+    private ApiCallContext GetClient()
     {
         var address = HttpClientFactory.LocalNativeApiPort > 0
             ? HttpClientFactory.LocalNativeApiAddress
@@ -105,7 +122,7 @@ internal sealed class SingBoxGrpcApiClient : ISingBoxApiClient, IDisposable
                 headers.Add("authorization", $"Bearer {secret}");
             }
 
-            return (_client!, headers);
+            return new ApiCallContext(_client!, headers, address);
         }
     }
 
@@ -164,8 +181,8 @@ internal sealed class SingBoxGrpcApiClient : ISingBoxApiClient, IDisposable
         var target = string.Empty;
         try
         {
-            var (client, headers) = GetClient();
-            target = _cachedAddress;
+            var (client, headers, address) = GetClient();
+            target = address;
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
             var version = await client.GetVersionAsync(
                 new Empty(),

@@ -1,3 +1,6 @@
+using System.Net;
+using System.Net.Sockets;
+using carton.Core.Services;
 using carton.Core.Services.SingBoxApi;
 using Xunit;
 
@@ -9,6 +12,7 @@ namespace carton.GUI.Tests.Services;
 /// subscription intervals are nanoseconds (Go time.Duration), and URL test
 /// results are only fresh when the kernel pushed an updated history entry.
 /// </summary>
+[Collection(SingBoxApiGlobalStateCollection.Name)]
 public sealed class SingBoxGrpcApiClientTests
 {
     [Fact]
@@ -133,12 +137,42 @@ public sealed class SingBoxGrpcApiClientTests
     [Fact]
     public async Task IsReachableAsync_WhenUnreachable_LogsTargetAddress()
     {
+        // Hold a loopback port for the whole probe so no other test can grab it, and
+        // drop every connection on accept: the client fails before any HTTP/2 frame
+        // arrives instead of waiting for the 2s deadline.
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var dropLoop = Task.Run(async () =>
+        {
+            try
+            {
+                while (true)
+                {
+                    (await listener.AcceptSocketAsync()).Dispose();
+                }
+            }
+            catch (Exception)
+            {
+                // Listener stopped: the test is over.
+            }
+        });
+
         string? loggedMessage = null;
-        carton.Core.Services.HttpClientFactory.UpdateLocalNativeApi("127.0.0.1", 59998, null);
-        using var client = new SingBoxGrpcApiClient(msg => loggedMessage = msg);
-        var reachable = await client.IsReachableAsync();
-        Assert.False(reachable);
-        Assert.NotNull(loggedMessage);
-        Assert.Contains("http://127.0.0.1:59998", loggedMessage);
+        HttpClientFactory.UpdateLocalNativeApi("127.0.0.1", port, null);
+        try
+        {
+            using var client = new SingBoxGrpcApiClient(msg => loggedMessage = msg);
+            var reachable = await client.IsReachableAsync();
+            Assert.False(reachable);
+            Assert.NotNull(loggedMessage);
+            Assert.Contains($"http://127.0.0.1:{port}", loggedMessage);
+        }
+        finally
+        {
+            HttpClientFactory.ClearLocalNativeApi();
+            listener.Stop();
+            await dropLoop;
+        }
     }
 }

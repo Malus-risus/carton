@@ -1023,34 +1023,6 @@ public partial class MainViewModel : ViewModelBase
         IsPaneOpen = !IsPaneOpen;
     }
 
-    [RelayCommand]
-    private async Task ToggleConnection()
-    {
-        if (DashboardViewModel == null)
-        {
-            return;
-        }
-
-        if (!IsKernelInstalled)
-        {
-            var mirror = SelectedKernelDownloadMirror;
-            var latestVersion = await _kernelManager.GetLatestVersionAsync(mirror);
-            ApplyLatestKernelVersion(mirror, latestVersion);
-            ConnectionStatus = GetMissingKernelStartMessage();
-            ShowKernelDialog = true;
-            return;
-        }
-
-        if (IsConnected)
-        {
-            await DashboardViewModel.StopConnectionCommand.ExecuteAsync(null);
-        }
-        else
-        {
-            await DashboardViewModel.StartWithSelectedProfileCommand.ExecuteAsync(null);
-        }
-    }
-
     private async Task RefreshLatestKernelVersionAsync()
     {
         if (IsKernelInstalled)
@@ -1108,110 +1080,6 @@ public partial class MainViewModel : ViewModelBase
             : CartonApplicationInfo.FormatSingBoxStatus(kernelInfo.KernelVersion);
     }
 
-    private async Task<string?> EnsureProfileConfigPathForStartAsync(Profile profile)
-    {
-        var configPath = await _configManager.GetConfigPathAsync(profile.Id, profile.Type);
-        var hasLocalConfig = !string.IsNullOrWhiteSpace(configPath) && File.Exists(configPath);
-        if (hasLocalConfig && !ShouldRefreshRemoteProfileOnStart(profile))
-        {
-            return configPath;
-        }
-
-        if (profile.Type != ProfileType.Remote)
-        {
-            return null;
-        }
-
-        if (string.IsNullOrWhiteSpace(profile.Url))
-        {
-            var message = GetString("Status.RemoteProfileUrlEmpty", "Remote profile URL is empty");
-            _logStore.AddLog($"[ERROR] {message}: {profile.Name} ({profile.Id})");
-            ConnectionStatus = message;
-            return null;
-        }
-
-        var loadingMessage = hasLocalConfig
-            ? GetString("Status.RemoteConfigRefreshing", "Remote config due for update, refreshing...")
-            : GetString("Status.RemoteConfigDownloading", "Remote config missing, downloading...");
-        ConnectionStatus = loadingMessage;
-        _logStore.AddLog($"[INFO] {loadingMessage}: {profile.Name} ({profile.Id})");
-        try
-        {
-            var client = HttpClientFactory.External;
-            var content = await HttpDownloadHelper.DownloadTextAsync(
-                client,
-                profile.Url,
-                (bytesReceived, totalBytes) =>
-                {
-                    Dispatcher.UIThread.Post(() =>
-                    {
-                        ConnectionStatus = DownloadUiHelper.FormatStatus(
-                            loadingMessage,
-                            bytesReceived,
-                            totalBytes,
-                            GetString("Common.Unknown", "unknown"));
-                    });
-                });
-            if (string.IsNullOrWhiteSpace(content))
-            {
-                var message = GetString("Status.RemoteConfigEmpty", "Downloaded remote config is empty");
-                return HandleRemoteConfigRefreshFailure(profile, configPath, hasLocalConfig, message);
-            }
-
-            await _configManager.SaveConfigAsync(profile.Id, content, ProfileType.Remote);
-            profile.LastUpdated = DateTime.Now;
-            await _profileManager.UpdateAsync(profile);
-            var downloadedPath = await _configManager.GetConfigPathAsync(profile.Id, ProfileType.Remote);
-            if (string.IsNullOrWhiteSpace(downloadedPath) || !File.Exists(downloadedPath))
-            {
-                var message = GetString("Status.RemoteConfigFileMissing", "Remote config download succeeded but file missing");
-                return HandleRemoteConfigRefreshFailure(profile, configPath, hasLocalConfig, message);
-            }
-
-            var completedMessage = hasLocalConfig
-                ? GetString("Status.RemoteConfigRefreshed", "Remote config refreshed")
-                : GetString("Status.RemoteConfigDownloaded", "Remote config downloaded");
-            _logStore.AddLog($"[INFO] {completedMessage}: {profile.Name} ({profile.Id})");
-            ConnectionStatus = completedMessage;
-            return downloadedPath;
-        }
-        catch (Exception ex)
-        {
-            var message = GetString("Status.RemoteConfigDownloadFailed", "Failed to download remote config");
-            return HandleRemoteConfigRefreshFailure(profile, configPath, hasLocalConfig, $"{message}: {ex.Message}");
-        }
-    }
-
-    private string? HandleRemoteConfigRefreshFailure(Profile profile, string? existingConfigPath, bool hasLocalConfig, string errorMessage)
-    {
-        if (hasLocalConfig && !string.IsNullOrWhiteSpace(existingConfigPath) && File.Exists(existingConfigPath))
-        {
-            var warning = GetString("Status.RemoteConfigRefreshFailedUsingLocal", "Remote config refresh failed, using local cached config");
-            _logStore.AddLog($"[WARN] {errorMessage}: {profile.Name} ({profile.Id}); {warning}");
-            ConnectionStatus = $"{warning}: {errorMessage}";
-            return existingConfigPath;
-        }
-
-        _logStore.AddLog($"[ERROR] {errorMessage}: {profile.Name} ({profile.Id})");
-        ConnectionStatus = errorMessage;
-        return null;
-    }
-
-    private static bool ShouldRefreshRemoteProfileOnStart(Profile profile)
-    {
-        if (profile.Type != ProfileType.Remote || !profile.AutoUpdate)
-        {
-            return false;
-        }
-
-        if (profile.UpdateInterval <= 0 || profile.LastUpdated == null)
-        {
-            return true;
-        }
-
-        return DateTime.Now - profile.LastUpdated.Value >= TimeSpan.FromMinutes(profile.UpdateInterval);
-    }
-
     private string GetString(string key, string fallback)
     {
         var value = _localizationService.GetString(key);
@@ -1261,31 +1129,6 @@ public partial class MainViewModel : ViewModelBase
     private void CloseKernelDialog()
     {
         ShowKernelDialog = false;
-    }
-
-    private string BuildStartFailureStatus()
-    {
-        if (!IsKernelInstalled || !_kernelManager.IsKernelInstalled)
-        {
-            return GetMissingKernelStartMessage();
-        }
-
-        var fallback = _localizationService["Status.FailedStart"];
-        var detail = _singBoxManager.State.ErrorMessage;
-        if (!string.IsNullOrWhiteSpace(detail) &&
-            detail.Contains("sing-box binary not found", StringComparison.OrdinalIgnoreCase))
-        {
-            return GetMissingKernelStartMessage();
-        }
-
-        return string.IsNullOrWhiteSpace(detail) ? fallback : $"{fallback}: {detail}";
-    }
-
-    private string GetMissingKernelStartMessage()
-    {
-        return GetString(
-            "Status.KernelMissingStartFailed",
-            "Start failed. sing-box kernel is missing. Please install it from Settings.");
     }
 
     private string BuildKernelDownloadFailureMessage()
