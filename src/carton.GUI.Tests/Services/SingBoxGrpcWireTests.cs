@@ -210,7 +210,8 @@ public sealed class SingBoxGrpcWireTests
             Assert.True(delays.TryGetValue("node-a", out var delay));
             Assert.NotEqual(999, delay);
             Assert.True(delay > 0);
-            Assert.Contains("node-a", harness.Server.UrlTestCalls);
+            Assert.Contains("proxy", harness.Server.UrlTestCalls);
+            Assert.DoesNotContain("node-a", harness.Server.UrlTestCalls);
         });
     }
 

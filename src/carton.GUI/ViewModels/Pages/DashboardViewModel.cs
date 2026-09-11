@@ -12,6 +12,7 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Diagnostics;
 using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
@@ -546,6 +547,7 @@ public partial class DashboardViewModel : PageViewModelBase
                 _proxyModeCache.Clear();
                 UpdateModeSelection(null);
                 ResetTrafficDisplay();
+                ResetConnectivityDisplay();
             });
         }
     }
@@ -2317,17 +2319,30 @@ public partial class DashboardViewModel : PageViewModelBase
         }
     }
 
-    private bool AllConnectivityItemsMeasured()
+    private bool AllConnectivityItemsHaveLatency()
     {
+        if (ConnectivityItems.Count == 0)
+        {
+            return false;
+        }
+
         for (var i = 0; i < ConnectivityItems.Count; i++)
         {
-            if (!ConnectivityItems[i].HasMeasured)
+            if (ConnectivityItems[i].Latency <= 0)
             {
                 return false;
             }
         }
 
         return true;
+    }
+
+    private void ResetConnectivityDisplay()
+    {
+        foreach (var item in ConnectivityItems)
+        {
+            item.ResetMeasurement();
+        }
     }
 
     private async Task RefreshConnectivityCoreAsync(bool force)
@@ -2337,7 +2352,7 @@ public partial class DashboardViewModel : PageViewModelBase
             return;
         }
 
-        if (!force && AllConnectivityItemsMeasured())
+        if (!force && AllConnectivityItemsHaveLatency())
         {
             return;
         }
@@ -2345,23 +2360,66 @@ public partial class DashboardViewModel : PageViewModelBase
         IsRefreshingConnectivity = true;
         try
         {
-            using var client = CreateConnectivityProxyClient();
-            if (client == null)
+            if (!await WaitForMixedProxyAsync())
             {
-                foreach (var item in ConnectivityItems)
-                {
-                    item.SetMeasuredLatency(null);
-                }
-
+                await Dispatcher.UIThread.InvokeAsync(ResetConnectivityDisplay);
                 return;
             }
 
-            var tasks = new Task[ConnectivityItems.Count];
-            for (int i = 0; i < ConnectivityItems.Count; i++)
+            using var client = CreateConnectivityProxyClient();
+            if (client == null)
             {
-                tasks[i] = RefreshConnectivityItemAsync(client, ConnectivityItems[i]);
+                await Dispatcher.UIThread.InvokeAsync(ResetConnectivityDisplay);
+                return;
             }
-            await Task.WhenAll(tasks);
+
+            const int maxAttempts = 3;
+            for (var attempt = 0; attempt < maxAttempts; attempt++)
+            {
+                if (attempt > 0)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(500 * attempt));
+                    if (!ShowDashboardMetrics)
+                    {
+                        return;
+                    }
+                }
+
+                var pending = new List<DashboardSiteStatusItemViewModel>();
+                for (var i = 0; i < ConnectivityItems.Count; i++)
+                {
+                    if (force || ConnectivityItems[i].Latency <= 0)
+                    {
+                        pending.Add(ConnectivityItems[i]);
+                    }
+                }
+
+                if (pending.Count == 0)
+                {
+                    return;
+                }
+
+                var tasks = new Task[pending.Count];
+                for (var i = 0; i < pending.Count; i++)
+                {
+                    tasks[i] = RefreshConnectivityItemAsync(client, pending[i]);
+                }
+
+                await Task.WhenAll(tasks);
+
+                if (!force && AllConnectivityItemsHaveLatency())
+                {
+                    return;
+                }
+
+                // Manual refresh always takes a single pass; auto-start retries
+                // sites that still have no latency because mixed/routing may not
+                // be ready the instant the gRPC API reports Running.
+                if (force)
+                {
+                    return;
+                }
+            }
         }
         finally
         {
@@ -2385,10 +2443,48 @@ public partial class DashboardViewModel : PageViewModelBase
         return HttpClientFactory.CreateExternalProxyClient("127.0.0.1", port);
     }
 
+    private async Task<bool> WaitForMixedProxyAsync()
+    {
+        if (!TryGetValidatedPort(out var port, out _))
+        {
+            return false;
+        }
+
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            if (!ShowDashboardMetrics)
+            {
+                return false;
+            }
+
+            try
+            {
+                using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+                using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+                await socket.ConnectAsync(new IPEndPoint(IPAddress.Loopback, port), cts.Token);
+                return true;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (SocketException)
+            {
+            }
+
+            await Task.Delay(200);
+        }
+
+        return false;
+    }
+
     private static async Task<int?> MeasureConnectivityAsync(HttpClient client, string url)
     {
         var requestUri = AppendConnectivityCacheBuster(url);
-        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri)
+        {
+            Version = HttpVersion.Version11,
+            VersionPolicy = HttpVersionPolicy.RequestVersionOrLower
+        };
         request.Headers.TryAddWithoutValidation("Cache-Control", "no-cache");
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -2401,18 +2497,11 @@ public partial class DashboardViewModel : PageViewModelBase
                 cts.Token);
             stopwatch.Stop();
 
-            if (!response.IsSuccessStatusCode)
-            {
-                return null;
-            }
-
+            // Any HTTP response through the mixed inbound proves the path works.
+            // Favicon endpoints often return 403/404 to a non-browser User-Agent.
             return Math.Max(1, (int)Math.Round(stopwatch.Elapsed.TotalMilliseconds));
         }
-        catch (OperationCanceledException)
-        {
-            return null;
-        }
-        catch (HttpRequestException)
+        catch (Exception)
         {
             return null;
         }
@@ -2613,5 +2702,12 @@ public partial class DashboardSiteStatusItemViewModel : ObservableObject
         Latency = latency ?? 0;
         LatencyText = latency.HasValue ? $"{latency.Value} ms" : "--";
         HasMeasured = true;
+    }
+
+    public void ResetMeasurement()
+    {
+        Latency = 0;
+        LatencyText = "--";
+        HasMeasured = false;
     }
 }

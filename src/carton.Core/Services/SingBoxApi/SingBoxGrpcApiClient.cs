@@ -56,6 +56,61 @@ internal sealed class SingBoxGrpcApiClient : ISingBoxApiClient, IDisposable
         return remaining;
     }
 
+    /// <summary>
+    /// sing-box's <c>URLTest</c> RPC only accepts an outbound <b>group</b> tag
+    /// (selector / urltest / ...). Leaf nodes return <c>InvalidArgument: outbound is
+    /// not a group</c>. Map requested tags to the group tags that must be triggered:
+    /// a requested group is tested directly; a requested leaf tests every parent group
+    /// that contains it.
+    /// </summary>
+    internal static List<string> ResolveUrlTestOutboundTags(
+        IEnumerable<KeyValuePair<string, IEnumerable<string>>> groups,
+        IReadOnlyCollection<string> requestedTags)
+    {
+        var requested = new HashSet<string>(requestedTags, StringComparer.OrdinalIgnoreCase);
+        var materializedGroups = groups as IList<KeyValuePair<string, IEnumerable<string>>> ?? groups.ToList();
+        var groupTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var triggerTags = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (groupTag, _) in materializedGroups)
+        {
+            if (!string.IsNullOrWhiteSpace(groupTag))
+            {
+                groupTags.Add(groupTag);
+            }
+        }
+
+        foreach (var (groupTag, itemTags) in materializedGroups)
+        {
+            if (string.IsNullOrWhiteSpace(groupTag) || !seen.Add(groupTag))
+            {
+                continue;
+            }
+
+            if (requested.Contains(groupTag))
+            {
+                triggerTags.Add(groupTag);
+                continue;
+            }
+
+            foreach (var itemTag in itemTags)
+            {
+                if (string.IsNullOrWhiteSpace(itemTag) ||
+                    !requested.Contains(itemTag) ||
+                    groupTags.Contains(itemTag))
+                {
+                    continue;
+                }
+
+                triggerTags.Add(groupTag);
+                break;
+            }
+        }
+
+        return triggerTags;
+    }
+
     private readonly Action<string>? _log;
     private readonly object _channelLock = new();
     private GrpcChannel? _channel;
@@ -443,11 +498,16 @@ internal sealed class SingBoxGrpcApiClient : ISingBoxApiClient, IDisposable
             // Baseline: last url test time per requested tag (also collected from nested groups).
             var baseline = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
             var stale = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            List<string> triggerTags = tags;
             while (await call.ResponseStream.MoveNext(cts.Token))
             {
                 var snapshot = call.ResponseStream.Current;
+                var groupMembers = new List<KeyValuePair<string, IEnumerable<string>>>(snapshot.Group.Count);
                 foreach (var g in snapshot.Group)
                 {
+                    groupMembers.Add(new KeyValuePair<string, IEnumerable<string>>(
+                        g.Tag,
+                        g.Items.Select(item => item.Tag)));
                     foreach (var item in g.Items)
                     {
                         if (tags.Contains(item.Tag, StringComparer.OrdinalIgnoreCase))
@@ -456,6 +516,12 @@ internal sealed class SingBoxGrpcApiClient : ISingBoxApiClient, IDisposable
                             stale[item.Tag] = item.UrlTestDelay;
                         }
                     }
+                }
+
+                var resolved = ResolveUrlTestOutboundTags(groupMembers, tags);
+                if (resolved.Count > 0)
+                {
+                    triggerTags = resolved;
                 }
 
                 // The first message is the kernel's FULL current state: whatever it
@@ -468,8 +534,9 @@ internal sealed class SingBoxGrpcApiClient : ISingBoxApiClient, IDisposable
             // side (it spawns the test and returns), so awaiting them one-by-one would
             // just serialize N needless RPC round-trips. Failures fall through to the
             // stale cached values below.
-            var triggerTasks = new List<Task>(tags.Count);
-            foreach (var tag in tags)
+            // The RPC only accepts group tags; leaf tags are resolved to parent groups.
+            var triggerTasks = new List<Task>(triggerTags.Count);
+            foreach (var tag in triggerTags)
             {
                 triggerTasks.Add(client.URLTestAsync(new URLTestRequest { OutboundTag = tag }, headers).ResponseAsync);
             }

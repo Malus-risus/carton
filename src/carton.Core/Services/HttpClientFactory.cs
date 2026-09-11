@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http;
 using System.Net.Http.Headers;
 using carton.Core.Utilities;
 
@@ -145,18 +146,21 @@ public static class HttpClientFactory
 
     public static HttpClient CreateExternalProxyClient(string host, int port)
     {
-        // This is the proxy endpoint scheme, not the destination scheme:
-        // HTTPS URLs still work here because HttpClient tunnels them via CONNECT
-        // through the local mixed-port HTTP proxy.
-        var handler = new HttpClientHandler
+        // Mixed inbound speaks both HTTP CONNECT and SOCKS. Prefer SOCKS5 so the
+        // probe never sends an HTTP/2 preface / CONNECT to the local listener
+        // (sniff on mixed can mis-handle HTTP CONNECT from HttpClient).
+        var handler = new SocketsHttpHandler
         {
             UseProxy = true,
-            Proxy = new WebProxy($"http://{host}:{port}")
+            Proxy = new WebProxy($"socks5://{host}:{port}"),
+            ConnectTimeout = TimeSpan.FromSeconds(5)
         };
 
         var client = new HttpClient(handler, disposeHandler: true)
         {
-            Timeout = TimeSpan.FromSeconds(15)
+            Timeout = TimeSpan.FromSeconds(15),
+            DefaultRequestVersion = HttpVersion.Version11,
+            DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower
         };
         ConfigureExternalClient(client);
         return client;

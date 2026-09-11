@@ -37,6 +37,8 @@ internal interface ISingBoxApiClient
     /// <summary>
     /// Triggers a URL test on the kernel (fire-and-forget: results are pushed via the
     /// groups stream, not through this RPC's response).
+    /// The daemon only accepts an outbound <b>group</b> tag; leaf nodes must be mapped
+    /// to a parent group first (see <c>ResolveUrlTestOutboundTags</c>).
     /// </summary>
     Task URLTestAsync(string outboundTag);
 
@@ -57,8 +59,9 @@ internal interface ISingBoxApiClient
 
     /// <summary>
     /// Tests the given outbounds and returns fresh delays keyed by tag.
-    /// NOTE: testUrl is accepted for signature compatibility only - the sing-box
-    /// daemon URLTest RPC always uses the url configured on the outbound.
+    /// Leaf tags are resolved to parent groups because the daemon URLTest RPC only
+    /// accepts group tags. NOTE: testUrl is accepted for signature compatibility only - the
+    /// daemon always uses the url configured on the group/outbound.
     /// </summary>
     Task<Dictionary<string, int>> RunOutboundDelayTestsAsync(IEnumerable<string> outboundTags, string? testUrl = null, int timeoutMs = 5000);
     Task<List<ConnectionInfo>> GetConnectionsAsync();

@@ -182,16 +182,27 @@ public partial class SingBoxManager
             result[tag] = delay;
         }
 
-        // URLTest is fire-and-forget on the kernel side; trigger all requests
-        // concurrently (one RPC round-trip each, no serialized waits). The trigger runs
-        // inside WaitForFreshDelaysAsync after the push handler is attached.
+        // URLTest is fire-and-forget on the kernel side and only accepts group tags.
+        // Leaf nodes are resolved to their parent groups; we still wait on the requested
+        // item tags via the groups stream. The trigger runs inside WaitForFreshDelaysAsync
+        // after the push handler is attached.
+        var triggerTags = SingBoxGrpcApiClient.ResolveUrlTestOutboundTags(
+            groupsSnapshot.Groups.Select(group => new KeyValuePair<string, IEnumerable<string>>(
+                group.Tag,
+                group.Items.Select(item => item.Tag))),
+            tags);
+        if (triggerTags.Count == 0)
+        {
+            triggerTags = tags;
+        }
+
         var fresh = await WaitForFreshDelaysAsync(
             baseline,
             result,
             timeoutMs,
             async () =>
             {
-                var triggerTasks = tags
+                var triggerTasks = triggerTags
                     .Select(apiClient.URLTestAsync)
                     .ToList();
                 try
