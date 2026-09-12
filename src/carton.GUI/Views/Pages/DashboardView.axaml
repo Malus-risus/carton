@@ -17,6 +17,10 @@
       <Setter Property="CornerRadius" Value="16"/>
     </Style>
 
+    <Style Selector="Border.sfmCard.compact">
+      <Setter Property="CornerRadius" Value="12"/>
+    </Style>
+
     <Style Selector="Border.modeTrack">
       <Setter Property="Background" Value="{DynamicResource CartonControlBackgroundBaseLowBrush}"/>
       <Setter Property="CornerRadius" Value="14"/>
@@ -132,14 +136,14 @@
   <ScrollViewer>
     <StackPanel Margin="20" Spacing="16">
       <Border Classes="card"
-              Padding="20"
+              Padding="12"
               IsEnabled="{Binding CanUseDashboardControls}">
-        <StackPanel Spacing="14">
+        <StackPanel Spacing="10">
           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
             <TextBlock Grid.Column="0"
                        Text="{DynamicResource Dashboard.Section.Configuration}"
-                       FontSize="22"
-                       FontWeight="SemiBold"
+                       FontSize="16"
+                       FontWeight="Bold"
                        VerticalAlignment="Center"/>
             <Button Grid.Column="1"
                     Classes="iconButton"
@@ -157,12 +161,12 @@
                     BorderBrush="{DynamicResource CartonControlForegroundBaseMediumLowBrush}"
                     BorderThickness="1"
                     CornerRadius="12"
-                    Padding="12">
-              <StackPanel Spacing="12">
-                <WrapPanel Orientation="Horizontal">
+                    Padding="8">
+              <Grid RowDefinitions="Auto,8,Auto">
+                <WrapPanel Grid.Row="0" Orientation="Horizontal">
                   <StackPanel Orientation="Horizontal"
                               Spacing="10"
-                              Margin="0,0,10,8">
+                              Margin="0,0,10,6">
                     <TextBlock Text="{DynamicResource Dashboard.Field.Port}"
                                Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"
                                VerticalAlignment="Center"/>
@@ -181,7 +185,7 @@
                   </StackPanel>
 
                   <Border Classes="portScopeTrack"
-                          Margin="0,0,10,8">
+                          Margin="0,0,10,6">
                     <Grid ColumnDefinitions="Auto,Auto"
                           ColumnSpacing="3">
                       <RadioButton Grid.Column="0"
@@ -205,7 +209,7 @@
 
                   <StackPanel Orientation="Horizontal"
                               Spacing="10"
-                              Margin="0,0,0,8">
+                              Margin="0,0,0,6">
                     <Button Classes="iconButton"
                             IsEnabled="{Binding ShowDashboardMetrics}"
                             ToolTip.Tip="{DynamicResource Dashboard.Menu.OpenTool}">
@@ -243,7 +247,7 @@
                   </StackPanel>
                 </WrapPanel>
 
-                <Grid ColumnDefinitions="Auto,120,*" ColumnSpacing="10">
+                <Grid Grid.Row="2" ColumnDefinitions="Auto,120,*" ColumnSpacing="10">
                   <TextBlock Grid.Column="0"
                              Text="{DynamicResource Dashboard.Field.LogLevel}"
                              VerticalAlignment="Center"/>
@@ -262,37 +266,32 @@
                              TextTrimming="CharacterEllipsis"
                              Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
                 </Grid>
-              </StackPanel>
+              </Grid>
             </Border>
 
             <Border Grid.Column="1"
                     BorderBrush="{DynamicResource CartonControlForegroundBaseMediumLowBrush}"
                     BorderThickness="1"
                     CornerRadius="12"
-                    Padding="10">
-              <StackPanel Spacing="10">
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    Padding="8">
+              <Grid RowDefinitions="Auto,8,Auto">
+                <Grid Grid.Row="0" MinHeight="32" ColumnDefinitions="*,Auto" ColumnSpacing="8" VerticalAlignment="Center">
                   <TextBlock Grid.Column="0"
                              Text="{DynamicResource Dashboard.Option.SystemProxy}"
                              VerticalAlignment="Center"/>
                   <ToggleSwitch Grid.Column="1"
-
                                 IsChecked="{Binding EnableSystemProxy}"/>
                 </Grid>
 
-                <Border Height="1"
-                        Background="{DynamicResource CartonControlForegroundBaseMediumLowBrush}"/>
-
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <Grid Grid.Row="2" MinHeight="32" ColumnDefinitions="*,Auto" ColumnSpacing="8" VerticalAlignment="Center">
                   <TextBlock Grid.Column="0"
                              Text="{DynamicResource Dashboard.Option.Tun}"
                              VerticalAlignment="Center"/>
-                    <ToggleSwitch Grid.Column="1"
-
-                                  IsChecked="{Binding EnableTunInbound}"
-                                  IsEnabled="{Binding CanToggleTunInbound}"/>
+                  <ToggleSwitch Grid.Column="1"
+                                IsChecked="{Binding EnableTunInbound}"
+                                IsEnabled="{Binding CanToggleTunInbound}"/>
                 </Grid>
-              </StackPanel>
+              </Grid>
             </Border>
           </Grid>
 
@@ -332,31 +331,32 @@
         <ContentControl.DataTemplates>
           <DataTemplate DataType="vm:DashboardViewModel">
             <StackPanel Spacing="12">
-              <StackPanel Spacing="16">
-                <Grid ColumnDefinitions="*,*,0.95*" ColumnSpacing="16">
-                  <Border Classes="card sfmCard" Padding="16">
-                    <StackPanel Spacing="12">
-                      <StackPanel Orientation="Horizontal" Spacing="10">
-                        <PathIcon Width="16"
-                                  Height="16"
-                                  Data="M12 5 V19 M7 10 L12 5 L17 10"
-                                  VerticalAlignment="Center"/>
-                        <TextBlock Text="{DynamicResource Dashboard.Label.UploadSpeed}"
-                                   FontSize="17"
-                                   FontWeight="Bold"
+              <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
+                  <Border Classes="card sfmCard" Padding="12" Height="164">
+                    <StackPanel Spacing="8" VerticalAlignment="Center">
+                      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                          <PathIcon Width="16"
+                                    Height="16"
+                                    Data="M12 5 V19 M7 10 L12 5 L17 10"
+                                    VerticalAlignment="Center"/>
+                          <TextBlock Text="{DynamicResource Dashboard.Label.UploadSpeed}"
+                                     FontSize="16"
+                                     FontWeight="Bold"
+                                     VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding UploadSpeed}"
+                                   FontSize="22"
+                                   FontWeight="SemiBold"
                                    VerticalAlignment="Center"/>
-                      </StackPanel>
+                      </Grid>
 
-                      <StackPanel Spacing="4">
-                        <TextBlock Text="{Binding UploadSpeed}"
-                                   FontSize="24"
-                                   FontWeight="SemiBold"/>
-                        <TextBlock Text="{Binding TotalUpload}"
-                                   FontSize="13"
-                                   Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
-                      </StackPanel>
+                      <TextBlock Text="{Binding TotalUpload}"
+                                 FontSize="12"
+                                 Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
 
-                      <controls:SparklineChart Height="60"
+                      <controls:SparklineChart Height="56"
                                                Samples="{Binding UploadTrafficSamples}"
                                                GridBrush="{DynamicResource CartonControlForegroundBaseMediumLowBrush}"
                                                FillBrush="{DynamicResource CartonAccentBrush}"
@@ -364,109 +364,181 @@
                     </StackPanel>
                   </Border>
 
-                  <Border Grid.Column="1" Classes="card sfmCard" Padding="16">
-                    <StackPanel Spacing="12">
-                      <StackPanel Orientation="Horizontal" Spacing="10">
-                        <PathIcon Width="16"
-                                  Height="16"
-                                  Data="M12 19 V5 M7 14 L12 19 L17 14"
-                                  VerticalAlignment="Center"/>
-                        <TextBlock Text="{DynamicResource Dashboard.Label.DownloadSpeed}"
-                                   FontSize="17"
-                                   FontWeight="Bold"
+                  <Border Grid.Column="1" Classes="card sfmCard" Padding="12" Height="164">
+                    <StackPanel Spacing="8" VerticalAlignment="Center">
+                      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                          <PathIcon Width="16"
+                                    Height="16"
+                                    Data="M12 19 V5 M7 14 L12 19 L17 14"
+                                    VerticalAlignment="Center"/>
+                          <TextBlock Text="{DynamicResource Dashboard.Label.DownloadSpeed}"
+                                     FontSize="16"
+                                     FontWeight="Bold"
+                                     VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding DownloadSpeed}"
+                                   FontSize="22"
+                                   FontWeight="SemiBold"
                                    VerticalAlignment="Center"/>
-                      </StackPanel>
+                      </Grid>
 
-                      <StackPanel Spacing="4">
-                        <TextBlock Text="{Binding DownloadSpeed}"
-                                   FontSize="24"
-                                   FontWeight="SemiBold"/>
-                        <TextBlock Text="{Binding TotalDownload}"
-                                   FontSize="13"
-                                   Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
-                      </StackPanel>
+                      <TextBlock Text="{Binding TotalDownload}"
+                                 FontSize="12"
+                                 Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
 
-                      <controls:SparklineChart Height="60"
+                      <controls:SparklineChart Height="56"
                                                Samples="{Binding DownloadTrafficSamples}"
                                                GridBrush="{DynamicResource CartonControlForegroundBaseMediumLowBrush}"
                                                FillBrush="{DynamicResource CartonAccentBrush}"
                                                LineBrush="{DynamicResource CartonAccentBrush}"/>
                     </StackPanel>
                   </Border>
+                </Grid>
 
-                  <Border Grid.Column="2" Classes="card sfmCard" Padding="16">
-                    <StackPanel Spacing="12">
-                      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-                        <PathIcon Grid.Column="0"
-                                  Width="16"
-                                  Height="16"
+                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="16">
+                  <Border Classes="card sfmCard compact" Padding="12,12" Height="98">
+                    <Grid RowDefinitions="*,*,*">
+                      <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                        <PathIcon Width="15"
+                                  Height="15"
                                   Data="M3 6 H21 V18 H3 Z M7 10 H17 V14 H7 Z"
                                   VerticalAlignment="Center"/>
+                        <TextBlock Text="{DynamicResource Dashboard.KernelStatus.TitleShort}"
+                                   FontSize="15"
+                                   FontWeight="Bold"
+                                   VerticalAlignment="Center"/>
+                      </StackPanel>
+
+                      <Grid Grid.Row="1" ColumnDefinitions="Auto,*" ColumnSpacing="12" VerticalAlignment="Center">
+                        <TextBlock Text="{DynamicResource Dashboard.KernelMemory.MemoryUsage}"
+                                   FontSize="12"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
                         <TextBlock Grid.Column="1"
-                                   Text="{DynamicResource Dashboard.KernelStatus.Title}"
-                                   FontSize="17"
+                                   Text="{Binding MemoryUsage}"
+                                   FontSize="12"
+                                   VerticalAlignment="Center"
+                                   HorizontalAlignment="Right"/>
+                      </Grid>
+
+                      <Grid Grid.Row="2" ColumnDefinitions="Auto,*" ColumnSpacing="12" VerticalAlignment="Center">
+                        <TextBlock Text="{DynamicResource Dashboard.KernelStatus.Goroutines}"
+                                   FontSize="12"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding GoroutineCount}"
+                                   FontSize="12"
+                                   VerticalAlignment="Center"
+                                   HorizontalAlignment="Right"/>
+                      </Grid>
+                    </Grid>
+                  </Border>
+
+                  <Border Grid.Column="1" Classes="card sfmCard compact" Padding="12,12" Height="98">
+                    <Grid RowDefinitions="*,*,*">
+                      <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                        <PathIcon Width="15"
+                                  Height="15"
+                                  Data="M4 4 H10 V10 H4 Z M14 4 H20 V10 H14 Z M4 14 H10 V20 H4 Z M14 14 H20 V20 H14 Z"
+                                  VerticalAlignment="Center"/>
+                        <TextBlock Text="{DynamicResource Dashboard.Connections.Title}"
+                                   FontSize="15"
+                                   FontWeight="Bold"
+                                   VerticalAlignment="Center"/>
+                      </StackPanel>
+
+                      <Grid Grid.Row="1" ColumnDefinitions="Auto,*" ColumnSpacing="12" VerticalAlignment="Center">
+                        <TextBlock Text="{DynamicResource Dashboard.Connections.Inbound}"
+                                   FontSize="12"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding ConnectionsIn}"
+                                   FontSize="12"
+                                   VerticalAlignment="Center"
+                                   HorizontalAlignment="Right"/>
+                      </Grid>
+
+                      <Grid Grid.Row="2" ColumnDefinitions="Auto,*" ColumnSpacing="12" VerticalAlignment="Center">
+                        <TextBlock Text="{DynamicResource Dashboard.Connections.Outbound}"
+                                   FontSize="12"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding ConnectionsOut}"
+                                   FontSize="12"
+                                   VerticalAlignment="Center"
+                                   HorizontalAlignment="Right"/>
+                      </Grid>
+                    </Grid>
+                  </Border>
+
+                  <Border Grid.Column="2" Classes="card sfmCard compact" Padding="12,12" Height="98">
+                    <Grid RowDefinitions="*,*,*">
+                      <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                        <PathIcon Grid.Column="0"
+                                  Width="15"
+                                  Height="15"
+                                  Data="M13 2 L5 13 H11 L9 22 L19 9 H13 Z"
+                                  VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="1"
+                                   Text="{DynamicResource Dashboard.Connectivity.TitleShort}"
+                                   FontSize="15"
                                    FontWeight="Bold"
                                    VerticalAlignment="Center"/>
                         <Button Grid.Column="2"
                                 Classes="iconButton"
+                                Width="24"
+                                Height="24"
+                                CornerRadius="12"
                                 Command="{Binding RefreshConnectivityCommand}"
                                 IsEnabled="{Binding !IsRefreshingConnectivity}"
                                 ToolTip.Tip="{DynamicResource Dashboard.KernelStatus.Refresh}">
-                          <PathIcon Width="14"
-                                    Height="14"
+                          <PathIcon Width="12"
+                                    Height="12"
                                     Data="M13 2 L5 13 H11 L9 22 L19 9 H13 Z"/>
                         </Button>
                       </Grid>
 
-                      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
-                        <TextBlock Text="{DynamicResource Dashboard.KernelMemory.KernelVersion}"
-                                   FontSize="12"
-                                   Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
-                        <TextBlock Grid.Column="1"
-                                   Text="{Binding KernelVersion}"
-                                   FontSize="13"
-                                   HorizontalAlignment="Right"/>
-                      </Grid>
-
-                      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
-                        <TextBlock Text="{DynamicResource Dashboard.KernelMemory.MemoryUsage}"
-                                   FontSize="12"
-                                   Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
-                        <TextBlock Grid.Column="1"
-                                   Text="{Binding MemoryUsage}"
-                                   FontSize="13"
-                                   HorizontalAlignment="Right"/>
-                      </Grid>
-
-                      <ItemsControl ItemsSource="{Binding ConnectivityItems}">
+                      <ItemsControl Grid.Row="1" Grid.RowSpan="2" ItemsSource="{Binding ConnectivityItems}">
+                        <ItemsControl.ItemsPanel>
+                          <ItemsPanelTemplate>
+                            <UniformGrid Rows="2"/>
+                          </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                           <DataTemplate DataType="vm:DashboardSiteStatusItemViewModel">
-                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" VerticalAlignment="Center">
                               <TextBlock Text="{Binding Name}"
                                          FontSize="12"
+                                         VerticalAlignment="Center"
                                          Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
                               <TextBlock Grid.Column="1"
                                          Text="{Binding LatencyText}"
-                                         FontSize="13"
+                                         FontSize="12"
+                                         VerticalAlignment="Center"
                                          Foreground="{Binding Latency, Converter={StaticResource LatencyForegroundConverter}}"
                                          HorizontalAlignment="Right"/>
                             </Grid>
                           </DataTemplate>
                         </ItemsControl.ItemTemplate>
                       </ItemsControl>
-                    </StackPanel>
+                    </Grid>
                   </Border>
                 </Grid>
 
-                <Border Classes="card sfmCard" Padding="16">
-                  <StackPanel Spacing="12">
+                <Border Classes="card sfmCard" Padding="12">
+                  <StackPanel Spacing="10">
                     <StackPanel Orientation="Horizontal" Spacing="10">
-                      <PathIcon Width="16"
-                                Height="16"
+                      <PathIcon Width="15"
+                                Height="15"
                                 Data="M4 4 H10 V10 H4 Z M14 4 H20 V10 H14 Z M4 14 H10 V20 H4 Z M14 14 H20 V20 H14 Z"
                                 VerticalAlignment="Center"/>
                       <TextBlock Text="{DynamicResource Dashboard.ProxyMode}"
-                                 FontSize="17"
+                                 FontSize="15"
                                  FontWeight="Bold"
                                  VerticalAlignment="Center"/>
                     </StackPanel>
@@ -505,7 +577,6 @@
                     </ComboBox>
                   </StackPanel>
                 </Border>
-              </StackPanel>
             </StackPanel>
           </DataTemplate>
         </ContentControl.DataTemplates>

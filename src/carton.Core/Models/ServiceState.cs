@@ -27,6 +27,12 @@ public class ServiceState
     public long TotalDownload { get; set; }
     public int ConnectionCount { get; set; }
     public long MemoryInUse { get; set; }
+    /// <summary>Kernel goroutine count, 1Hz from SubscribeStatus (0 when unknown).</summary>
+    public int Goroutines { get; set; }
+    /// <summary>Inbound connections tracked by the kernel's traffic manager.</summary>
+    public int ConnectionsIn { get; set; }
+    /// <summary>Outbound connections tracked by the kernel's connection manager.</summary>
+    public int ConnectionsOut { get; set; }
     public string? ErrorMessage { get; set; }
     public DateTime? StartTime { get; set; }
 }
@@ -107,6 +113,12 @@ public class TrafficInfo
 {
     public long Uplink { get; set; }
     public long Downlink { get; set; }
+    /// <summary>Kernel goroutine count from the same SubscribeStatus push (0 when unknown).</summary>
+    public int Goroutines { get; set; }
+    /// <summary>Inbound connections tracked by the kernel's traffic manager (0 when unavailable).</summary>
+    public int ConnectionsIn { get; set; }
+    /// <summary>Outbound connections tracked by the kernel's connection manager (0 when unavailable).</summary>
+    public int ConnectionsOut { get; set; }
 }
 
 public class ConnectionInfo

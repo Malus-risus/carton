@@ -180,6 +180,12 @@
   <x:String x:Key="Dashboard.Status.TunRestartFailedRestored">Failed to apply TUN change; restored previous running state.</x:String>
   <x:String x:Key="Dashboard.KernelStatus.Title">Kernel &amp; Status</x:String>
   <x:String x:Key="Dashboard.KernelStatus.Refresh">Refresh latency test</x:String>
+  <x:String x:Key="Dashboard.KernelStatus.TitleShort">Status</x:String>
+  <x:String x:Key="Dashboard.KernelStatus.Goroutines">Goroutines</x:String>
+  <x:String x:Key="Dashboard.Connections.Title">Connections</x:String>
+  <x:String x:Key="Dashboard.Connections.Inbound">Inbound</x:String>
+  <x:String x:Key="Dashboard.Connections.Outbound">Outbound</x:String>
+  <x:String x:Key="Dashboard.Connectivity.TitleShort">Connect</x:String>
 	<x:String x:Key="Dashboard.KernelMemory.KernelVersion">Kernel Version</x:String>
 	<x:String x:Key="Dashboard.KernelMemory.MemoryUsage">Memory Usage</x:String>
 

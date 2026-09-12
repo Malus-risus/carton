@@ -165,6 +165,9 @@ public partial class SingBoxManager
                     consecutiveFailures = 0;
                     _state.UploadSpeed = status.Uplink;
                     _state.DownloadSpeed = status.Downlink;
+                    _state.Goroutines = status.Goroutines;
+                    _state.ConnectionsIn = status.ConnectionsIn;
+                    _state.ConnectionsOut = status.ConnectionsOut;
                     if (status.TrafficAvailable)
                     {
                         _state.TotalUpload = status.UplinkTotal;
@@ -182,7 +185,10 @@ public partial class SingBoxManager
                     TrafficUpdated?.Invoke(this, new TrafficInfo
                     {
                         Uplink = status.Uplink,
-                        Downlink = status.Downlink
+                        Downlink = status.Downlink,
+                        Goroutines = status.Goroutines,
+                        ConnectionsIn = status.ConnectionsIn,
+                        ConnectionsOut = status.ConnectionsOut
                     });
 
                     if (_state.MemoryInUse != (long)status.Memory)

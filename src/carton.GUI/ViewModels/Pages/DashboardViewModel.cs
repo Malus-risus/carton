@@ -34,8 +34,6 @@ public partial class DashboardViewModel : PageViewModelBase
     private static readonly IReadOnlyList<DashboardSiteStatusDefinition> ConnectivityTargets =
     [
         new("Baidu", "https://apps.bdimg.com/favicon.ico"),
-        new("GitHub", "https://github.githubassets.com/favicon.ico"),
-        new("Cloudflare", "https://www.cloudflare.com/favicon.ico"),
         new("Google", "https://www.google.com/favicon.ico")
     ];
     private readonly ISingBoxManager? _singBoxManager;
@@ -132,6 +130,15 @@ public partial class DashboardViewModel : PageViewModelBase
 
     [ObservableProperty]
     private string _memoryUsage = "0 B";
+
+    [ObservableProperty]
+    private string _goroutineCount = "--";
+
+    [ObservableProperty]
+    private string _connectionsIn = "--";
+
+    [ObservableProperty]
+    private string _connectionsOut = "--";
 
     [NotifyCanExecuteChangedFor(nameof(RefreshConnectivityCommand))]
     [ObservableProperty]
@@ -548,6 +555,7 @@ public partial class DashboardViewModel : PageViewModelBase
                 UpdateModeSelection(null);
                 ResetTrafficDisplay();
                 ResetConnectivityDisplay();
+                ResetKernelStatusDisplay();
             });
         }
     }
@@ -586,7 +594,15 @@ public partial class DashboardViewModel : PageViewModelBase
 
             var state = _singBoxManager.State;
             ApplyTrafficMetrics(state.UploadSpeed, state.DownloadSpeed, state.TotalUpload, state.TotalDownload);
+            ApplyKernelStatusMetrics(state.Goroutines, state.ConnectionsIn, state.ConnectionsOut);
         });
+    }
+
+    private void ApplyKernelStatusMetrics(int goroutines, int connectionsIn, int connectionsOut)
+    {
+        GoroutineCount = goroutines > 0 ? goroutines.ToString() : "--";
+        ConnectionsIn = connectionsIn > 0 ? connectionsIn.ToString() : "--";
+        ConnectionsOut = connectionsOut > 0 ? connectionsOut.ToString() : "--";
     }
 
     private void InitializeMemoryMetrics()
@@ -1941,6 +1957,13 @@ public partial class DashboardViewModel : PageViewModelBase
         ApplyMemoryUsage(0);
     }
 
+    private void ResetKernelStatusDisplay()
+    {
+        GoroutineCount = "--";
+        ConnectionsIn = "--";
+        ConnectionsOut = "--";
+    }
+
     private async Task RefreshKernelVersionAsync()
     {
         if (_kernelManager == null)
@@ -1998,6 +2021,11 @@ public partial class DashboardViewModel : PageViewModelBase
 
         InitializeTrafficMetrics();
         InitializeMemoryMetrics();
+        var state = _singBoxManager?.State;
+        ApplyKernelStatusMetrics(
+            state?.Goroutines ?? 0,
+            state?.ConnectionsIn ?? 0,
+            state?.ConnectionsOut ?? 0);
         _ = RefreshModeAsync();
         _ = RefreshConnectivityCoreAsync(force: false);
     }

@@ -1055,6 +1055,9 @@ public partial class SingBoxManager : ISingBoxManager, IDisposable
         _state.TotalUpload = 0;
         _state.TotalDownload = 0;
         _state.ConnectionCount = 0;
+        _state.Goroutines = 0;
+        _state.ConnectionsIn = 0;
+        _state.ConnectionsOut = 0;
         _state.MemoryInUse = 0;
     }
 

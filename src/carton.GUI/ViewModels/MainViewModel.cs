@@ -403,7 +403,10 @@ public partial class MainViewModel : ViewModelBase
     {
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
         {
-            KernelStatus = status;
+            // Process progress messages (download/verify/switch) stay in the settings
+            // page download area (DownloadStatus); the persistent title-bar version label
+            // (KernelStatus) must ONLY change when the installed kernel actually changes
+            // (see ApplyInstalledKernelInfo / OnInstalledKernelChanged).
             DownloadStatus = status;
         });
     }

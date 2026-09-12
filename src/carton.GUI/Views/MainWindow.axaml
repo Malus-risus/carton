@@ -12,7 +12,7 @@
         x:Name="MainWindowRoot"
         x:DataType="vm:MainViewModel"
         Title="{DynamicResource App.Name}"
-        Width="910" Height="640"
+        Width="918" Height="668"
         MinWidth="700" MinHeight="400"
         WindowStartupLocation="CenterScreen"
         TransparencyLevelHint="None">
@@ -46,7 +46,12 @@
 
   <Grid RowDefinitions="Auto,*">
     <Border Grid.Row="0" Background="{DynamicResource CartonControlBackgroundChromeMediumBrush}">
-      <Grid Margin="12,8">
+      <Grid Margin="12,6">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
         <TextBlock Grid.Column="0"
                    Text="{Binding DashboardViewModel.CurrentProfile}"
                    HorizontalAlignment="Left"
@@ -57,12 +62,19 @@
                    MaxWidth="220"
                    ToolTip.Tip="{Binding DashboardViewModel.CurrentProfile}"
                    Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
-        <TextBlock
+        <TextBlock Grid.Column="1"
                    Text="{Binding CurrentPage.Title}"
                    HorizontalAlignment="Center"
                    VerticalAlignment="Center"
                    FontSize="14"
                    FontWeight="Medium"/>
+        <TextBlock Grid.Column="2"
+                   Text="{Binding KernelStatus}"
+                   HorizontalAlignment="Right"
+                   VerticalAlignment="Center"
+                   FontSize="12"
+                   IsVisible="{Binding IsKernelInstalled}"
+                   Foreground="{DynamicResource CartonControlForegroundBaseMediumBrush}"/>
       </Grid>
     </Border>
 
