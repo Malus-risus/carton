@@ -46,5 +46,5 @@
 
 **Windows Installer Compatibility**
 
-- 中文：从 `0.3.0` 开始，Windows 安装包切换了安装架构，不兼容从 `0.3.0` 之前的 Windows 安装版直接升级。请先卸载旧版安装包后再安装新版；便携版、Linux 版本及其他使用方式不受影响，没有变化。
-- English: Starting with `0.3.0`, the Windows installer uses a new installation architecture and cannot upgrade directly from Windows installer builds earlier than `0.3.0`. Please uninstall the old installer build before installing the new one. Portable builds, Linux builds, and other usage modes are not affected and remain unchanged.
+- 中文：从 `0.6.0` 开始，carton 最低仅支持 `1.14+` 版本的内核；如需使用低版本内核，请使用之前的 carton 版本。
+- English: Starting with `0.6.0`, carton requires a sing-box kernel version `1.14` or newer. To use older kernel versions, please stay on a previous carton release.
