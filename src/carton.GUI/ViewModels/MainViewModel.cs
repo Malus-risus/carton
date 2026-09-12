@@ -188,7 +188,7 @@ public partial class MainViewModel : ViewModelBase
         _themeService = ThemeService.Instance;
 
         _kernelManager.DownloadProgressChanged += OnDownloadProgress;
-        _kernelManager.StatusChanged += OnKernelStatusChanged;
+        _kernelManager.StatusChanged += OnKernelProcessMessage;
         _kernelManager.InstalledKernelChanged += OnInstalledKernelChanged;
 
         var singBoxPath = _kernelManager.KernelPath;
@@ -399,14 +399,14 @@ public partial class MainViewModel : ViewModelBase
         });
     }
 
-    private void OnKernelStatusChanged(object? sender, string status)
+    private void OnKernelProcessMessage(object? sender, string status)
     {
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
         {
-            // Process progress messages (download/verify/switch) stay in the settings
-            // page download area (DownloadStatus); the persistent title-bar version label
-            // (KernelStatus) must ONLY change when the installed kernel actually changes
-            // (see ApplyInstalledKernelInfo / OnInstalledKernelChanged).
+            // Kernel process messages (download/verify/install progress) belong to the
+            // settings download area (DownloadStatus) only. The persistent title-bar
+            // version label (KernelStatus) must ONLY change when the installed kernel
+            // actually changes (see ApplyInstalledKernelInfo / OnInstalledKernelChanged).
             DownloadStatus = status;
         });
     }
@@ -1140,7 +1140,19 @@ public partial class MainViewModel : ViewModelBase
         else
         {
             HasKernelDownloadFailed = true;
-            DownloadStatus = BuildKernelDownloadFailureMessage();
+            // DownloadStatus normally still holds the real failure message pushed by
+            // OnKernelProcessMessage (e.g. "Failed to download: ...") because every
+            // failure path inside KernelManager goes through a network await before
+            // invoking StatusChanged, so the Post'd update lands before this
+            // continuation resumes. That ordering is an observation about the current
+            // call chain, NOT a language guarantee (a cached/synchronously-completed
+            // lookup would inline the continuation). Guard against the edge case: if
+            // DownloadStatus is still the initial "starting download" text, no real
+            // error ever arrived - fall back to the generic hint instead of showing
+            // a stale "Starting download..."-prefixed message.
+            var startingText = _localizationService["Status.KernelDownloading"];
+            var failureDetail = DownloadStatus == startingText ? null : DownloadStatus;
+            DownloadStatus = BuildKernelDownloadFailureMessage(failureDetail);
         }
 
         OnPropertyChanged(nameof(KernelPrimaryActionText));
@@ -1152,9 +1164,8 @@ public partial class MainViewModel : ViewModelBase
         ShowKernelDialog = false;
     }
 
-    private string BuildKernelDownloadFailureMessage()
+    private string BuildKernelDownloadFailureMessage(string? detail)
     {
-        var detail = KernelStatus;
         var hint = _localizationService.CurrentLanguage == AppLanguage.SimplifiedChinese
             ? "可切换镜像后继续下载，或稍后下载。"
             : "Switch mirrors to continue downloading, or download later.";
@@ -1182,7 +1193,7 @@ public partial class MainViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            DownloadStatus = $"{KernelStatus} Failed to clear cache.db: {ex.Message}";
+            DownloadStatus = $"Failed to clear cache.db: {ex.Message}";
         }
     }
 
@@ -1234,7 +1245,7 @@ public partial class MainViewModel : ViewModelBase
             }
             _settingsViewModel = null;
             _kernelManager.DownloadProgressChanged -= OnDownloadProgress;
-            _kernelManager.StatusChanged -= OnKernelStatusChanged;
+            _kernelManager.StatusChanged -= OnKernelProcessMessage;
             _kernelManager.InstalledKernelChanged -= OnInstalledKernelChanged;
             _appUpdateCoordinator.PropertyChanged -= OnAppUpdateCoordinatorPropertyChanged;
 

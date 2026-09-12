@@ -62,6 +62,13 @@ internal sealed class SingBoxGrpcApiClient : ISingBoxApiClient, IDisposable
     /// not a group</c>. Map requested tags to the group tags that must be triggered:
     /// a requested group is tested directly; a requested leaf tests every parent group
     /// that contains it.
+    /// <para>
+    /// NOTE (kernel-inherent cost): the daemon has no per-leaf URLTest, so testing one
+    /// leaf triggers a test of EVERY node in its parent group(s) — a 200-node group
+    /// means 200 kernel-side probes. A leaf shared by multiple groups triggers all of
+    /// them. Callers that only need a display value should prefer the cached group
+    /// snapshot instead of forcing a test.
+    /// </para>
     /// </summary>
     internal static List<string> ResolveUrlTestOutboundTags(
         IEnumerable<KeyValuePair<string, IEnumerable<string>>> groups,
@@ -522,6 +529,15 @@ internal sealed class SingBoxGrpcApiClient : ISingBoxApiClient, IDisposable
                 if (resolved.Count > 0)
                 {
                     triggerTags = resolved;
+                }
+                else
+                {
+                    // No group contains the requested tags (unknown outbound): firing
+                    // URLTest with raw leaf tags would only produce InvalidArgument
+                    // ("outbound is not a group"). Skip the trigger; return the
+                    // stale cached values collected above (possibly none).
+                    _log?.Invoke($"[WARN] RunOutboundDelayTests: no group contains {string.Join(", ", tags)}; skipping URLTest");
+                    return stale;
                 }
 
                 // The first message is the kernel's FULL current state: whatever it

@@ -144,6 +144,15 @@ public static class HttpClientFactory
         return client;
     }
 
+    /// <summary>
+    /// HTTP client that egresses through the local sing-box mixed inbound, shared by
+    /// the dashboard site probe AND remote subscription downloads
+    /// (RemoteConfigUpdateService). Mixed inbound speaks both HTTP CONNECT and SOCKS;
+    /// prefer SOCKS5 so a probe never sends an HTTP/2 preface / CONNECT to the local
+    /// listener (sniff on mixed can mis-handle HTTP CONNECT from HttpClient), and pin
+    /// HTTP/1.1 for the same reason. ConnectTimeout 5s bounds the total wait when the
+    /// kernel is not running.
+    /// </summary>
     public static HttpClient CreateExternalProxyClient(string host, int port)
     {
         // Mixed inbound speaks both HTTP CONNECT and SOCKS. Prefer SOCKS5 so the

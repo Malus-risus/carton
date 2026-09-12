@@ -143,6 +143,13 @@ public partial class DashboardViewModel : PageViewModelBase
     [NotifyCanExecuteChangedFor(nameof(RefreshConnectivityCommand))]
     [ObservableProperty]
     private bool _isRefreshingConnectivity;
+    // Session-level "already auto-tested" flag: the auto-refresh path (page entry /
+    // window visibility) must not re-run the full retry loop on every navigation when
+    // a site (e.g. Google) is unreachable - otherwise up to ~16.5s of retries keep the
+    // refresh button disabled on each dashboard visit. Manual refresh (force) and a
+    // kernel restart (ResetConnectivityDisplay) clear it.
+    private bool _connectivityAutoTestedThisSession;
+    private int _connectivitySessionId;
 
     [RelayCommand]
     private Task CopyCmdTerminalProxy() => CopyTerminalProxyAsync(TerminalProxyTypeCmd);
@@ -600,9 +607,13 @@ public partial class DashboardViewModel : PageViewModelBase
 
     private void ApplyKernelStatusMetrics(int goroutines, int connectionsIn, int connectionsOut)
     {
-        GoroutineCount = goroutines > 0 ? goroutines.ToString() : "--";
-        ConnectionsIn = connectionsIn > 0 ? connectionsIn.ToString() : "--";
-        ConnectionsOut = connectionsOut > 0 ? connectionsOut.ToString() : "--";
+        // "--" means "no data" (kernel not pushing the metric yet), NOT zero.
+        // ConnectionsIn/Out are legitimately 0 when the kernel is idle, so gate on
+        // IsConnected instead of the value; Goroutines can never be 0 while running.
+        var running = IsConnected;
+        GoroutineCount = running && goroutines > 0 ? goroutines.ToString() : "--";
+        ConnectionsIn = running ? connectionsIn.ToString() : "--";
+        ConnectionsOut = running ? connectionsOut.ToString() : "--";
     }
 
     private void InitializeMemoryMetrics()
@@ -2367,6 +2378,9 @@ public partial class DashboardViewModel : PageViewModelBase
 
     private void ResetConnectivityDisplay()
     {
+        // Kernel stopped/restarted: a new session begins, so auto-test may run again.
+        _connectivitySessionId++;
+        _connectivityAutoTestedThisSession = false;
         foreach (var item in ConnectivityItems)
         {
             item.ResetMeasurement();
@@ -2380,11 +2394,12 @@ public partial class DashboardViewModel : PageViewModelBase
             return;
         }
 
-        if (!force && AllConnectivityItemsHaveLatency())
+        if (!force && (_connectivityAutoTestedThisSession || AllConnectivityItemsHaveLatency()))
         {
             return;
         }
 
+        var sessionId = _connectivitySessionId;
         IsRefreshingConnectivity = true;
         try
         {
@@ -2407,7 +2422,7 @@ public partial class DashboardViewModel : PageViewModelBase
                 if (attempt > 0)
                 {
                     await Task.Delay(TimeSpan.FromMilliseconds(500 * attempt));
-                    if (!ShowDashboardMetrics)
+                    if (!ShowDashboardMetrics || sessionId != _connectivitySessionId)
                     {
                         return;
                     }
@@ -2452,6 +2467,13 @@ public partial class DashboardViewModel : PageViewModelBase
         finally
         {
             IsRefreshingConnectivity = false;
+            // Auto path: mark the session as tested whether or not every site
+            // answered, so re-entering the dashboard never re-runs the retry loop.
+            // The flag survives kernel restarts only via ResetConnectivityDisplay.
+            if (!force)
+            {
+                _connectivityAutoTestedThisSession = true;
+            }
         }
     }
 
@@ -2527,10 +2549,23 @@ public partial class DashboardViewModel : PageViewModelBase
 
             // Any HTTP response through the mixed inbound proves the path works.
             // Favicon endpoints often return 403/404 to a non-browser User-Agent.
+            // This is only sound because the probe goes through SOCKS5 (a SOCKS
+            // failure surfaces as an exception below, never as a fake HTTP status);
+            // if the transport ever goes back to an HTTP proxy, proxy-generated
+            // 502/407 responses would be miscounted as "connected" here.
             return Math.Max(1, (int)Math.Round(stopwatch.Elapsed.TotalMilliseconds));
         }
-        catch (Exception)
+        catch (OperationCanceledException)
         {
+            return null;
+        }
+        catch (HttpRequestException)
+        {
+            return null;
+        }
+        catch (SocketException)
+        {
+            // SOCKS handshake / connection refused from the SocketsHttpHandler proxy.
             return null;
         }
     }

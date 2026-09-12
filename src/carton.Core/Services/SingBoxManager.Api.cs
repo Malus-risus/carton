@@ -193,7 +193,11 @@ public partial class SingBoxManager
             tags);
         if (triggerTags.Count == 0)
         {
-            triggerTags = tags;
+            // The requested tags matched no known group (unknown outbound or stale
+            // snapshot). Falling back to raw tags would only earn InvalidArgument
+            // ("outbound is not a group") from the daemon; report unavailable instead.
+            LogManager($"[WARN] RunOutboundDelayTests: no group contains {string.Join(", ", tags)}; skipping URLTest");
+            return result;
         }
 
         var fresh = await WaitForFreshDelaysAsync(
