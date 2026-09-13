@@ -33,6 +33,41 @@ public sealed class LogStore
         AddEntry(entry);
     }
 
+    /// <summary>
+    /// Structured carton entry: severity comes as an enum - no "[WARN] " prefix
+    /// parsing, no per-entry regex/StartsWith work on the hot logging path.
+    /// </summary>
+    public void AddLog(CartonLogEntry entry)
+    {
+        var message = entry.Message;
+        if (message.Length > MaxMessageLength)
+        {
+            message = message[..MaxMessageLength] + "...";
+        }
+
+        // Enum.ToString() boxes and allocates per entry; the severity set is tiny and
+        // fixed, so map it through constants instead (hot logging path). The enum's
+        // numeric order IS the filter rank (Debug = 0 ... Error = 3; "Fatal" = 4 only
+        // exists as a sing-box string level), so the rank casts straight through.
+        var levelText = entry.Level switch
+        {
+            CartonLogLevel.Debug => "Debug",
+            CartonLogLevel.Warn => "Warn",
+            CartonLogLevel.Error => "Error",
+            _ => "Info"
+        };
+
+        // The cast above relies on CartonLogLevel's numeric order matching
+        // GetLevelRank's string ranks. Assert it once (Debug builds only) instead of
+        // paying a per-entry switch on the hot path; if the enum ever changes order,
+        // the debug assert fails immediately instead of silently filtering wrong.
+        System.Diagnostics.Debug.Assert(
+            (byte)entry.Level == GetLevelRank(levelText),
+            "CartonLogLevel numeric values must match GetLevelRank's string ranks");
+
+        AddEntry(new LogEntryRecord(0, GetCurrentTimeText(), LogSource.Carton, levelText, (byte)entry.Level, message));
+    }
+
     public void AddSingBoxLog(KernelLogEntry log)
     {
         var entry = CreateSingBoxEntry(log);
@@ -78,7 +113,7 @@ public sealed class LogStore
     {
         lock (_syncRoot)
         {
-            _entries.RemoveAll(entry => entry.Source != source);
+            _entries.RemoveAll(entry => entry.Source == source);
             // Bump the reset epoch: sequence-based incremental consumers see a new
             // epoch and rebuild their view from the snapshot instead of blindly
             // appending the replayed history on top of stale rows.
@@ -120,7 +155,7 @@ public sealed class LogStore
             parsedMessage = parsedMessage[..MaxMessageLength] + "...";
         }
 
-        return new LogEntryRecord(0, time, source, level, parsedMessage);
+        return new LogEntryRecord(0, time, source, level, GetLevelRank(level), parsedMessage);
     }
 
     private LogEntryRecord CreateSingBoxEntry(KernelLogEntry log)
@@ -141,6 +176,7 @@ public sealed class LogStore
             GetCurrentTimeText(),
             LogSource.SingBox,
             log.Level,
+            GetLevelRank(log.Level),
             message);
     }
 
@@ -190,9 +226,31 @@ public sealed class LogStore
             EntriesChanged?.Invoke(this, EventArgs.Empty);
         });
     }
+
+    /// <summary>
+    /// Filter rank for a normalized level name (Debug = 0 ... Fatal = 4; "Trace" is
+    /// the most verbose and ranks 0). Levels are normalized to capitalized names at
+    /// parse time (LogParser / MapLogLevel / the carton enum switch), so an Ordinal
+    /// switch suffices. Used when records are created (rank cached on the record so
+    /// the hot filter path is a pure integer compare) and when the logs filter's
+    /// selected level changes.
+    /// </summary>
+    internal static byte GetLevelRank(string? level)
+    {
+        return level switch
+        {
+            "Debug" => 0,
+            "Trace" => 0,
+            "Info" => 1,
+            "Warn" => 2,
+            "Error" => 3,
+            "Fatal" => 4,
+            _ => 1
+        };
+    }
 }
 
-public readonly record struct LogEntryRecord(long Sequence, string Time, LogSource Source, string Level, string Message);
+public readonly record struct LogEntryRecord(long Sequence, string Time, LogSource Source, string Level, byte LevelRank, string Message);
 
 internal sealed class LogRingBuffer
 {

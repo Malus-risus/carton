@@ -78,6 +78,17 @@ public partial class LogsViewModel : PageViewModelBase, IDisposable
         _localizationService.LanguageChanged += OnLanguageChanged;
         _logStore.EntriesChanged += OnEntriesChanged;
         SelectedLogs.CollectionChanged += (_, _) => CopySelectedLogCommand.NotifyCanExecuteChanged();
+
+        // Release builds default the level filter to Info (lowest-level semantics:
+        // Info and everything more severe stays visible while Debug chatter stays
+        // quiet); Debug builds show everything so diagnosis keeps all detail.
+#if DEBUG
+        _selectedLevel = "All";
+        _appliedSelectedLevel = "All";
+#else
+        _selectedLevel = "Info";
+        _appliedSelectedLevel = "Info";
+#endif
     }
 
     public void OnNavigatedTo()
@@ -372,10 +383,14 @@ public partial class LogsViewModel : PageViewModelBase, IDisposable
         SelectedLogs.Clear();
         Logs.Clear();
 
+        // The selected level never changes inside this loop: compute its rank once
+        // instead of re-parsing it per entry.
+        var selectedRank = LogStore.GetLevelRank(selectedLevel);
+
         for (var i = 0; i < snapshot.Count; i++)
         {
             var entry = snapshot[i];
-            if (!MatchesFilter(entry, selectedLevel, selectedFilter, searchText, hasSearchText, cartonSourceDisplayName, singBoxSourceDisplayName))
+            if (!MatchesFilter(entry, selectedLevel, selectedRank, selectedFilter, searchText, hasSearchText, cartonSourceDisplayName, singBoxSourceDisplayName))
             {
                 continue;
             }
@@ -426,6 +441,10 @@ public partial class LogsViewModel : PageViewModelBase, IDisposable
             removedAny = true;
         }
 
+        // The selected level never changes inside this loop: compute its rank once
+        // instead of re-parsing it per entry.
+        var selectedRank = LogStore.GetLevelRank(selectedLevel);
+
         for (var i = 0; i < snapshot.Count; i++)
         {
             var entry = snapshot[i];
@@ -434,7 +453,7 @@ public partial class LogsViewModel : PageViewModelBase, IDisposable
                 continue;
             }
 
-            if (!MatchesFilter(entry, selectedLevel, selectedFilter, searchText, hasSearchText, cartonSourceDisplayName, singBoxSourceDisplayName))
+            if (!MatchesFilter(entry, selectedLevel, selectedRank, selectedFilter, searchText, hasSearchText, cartonSourceDisplayName, singBoxSourceDisplayName))
             {
                 continue;
             }
@@ -484,14 +503,17 @@ public partial class LogsViewModel : PageViewModelBase, IDisposable
     private static bool MatchesFilter(
         LogEntryRecord log,
         string selectedLevel,
+        int selectedRank,
         LogSourceFilter selectedFilter,
         string searchText,
         bool hasSearchText,
         string cartonSourceDisplayName,
         string singBoxSourceDisplayName)
     {
+        // Rank is cached on the record at creation time: a pure integer compare,
+        // no per-entry string matching on the hot filter path.
         var levelMatched = selectedLevel == "All" ||
-                           string.Equals(log.Level, selectedLevel, StringComparison.OrdinalIgnoreCase);
+                           log.LevelRank >= selectedRank;
         if (!levelMatched)
         {
             return false;
