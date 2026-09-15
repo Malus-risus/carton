@@ -36,6 +36,8 @@ public sealed class TrayMenuService : IDisposable
     private int _groupsMenuHash;
     private bool _hasGroupsMenuHash;
     private bool _isInitialized;
+    private Timer? _linuxTrayWatchdog;
+    private int _trayReRegisterPending;
 
     public TrayMenuService()
     {
@@ -65,7 +67,32 @@ public sealed class TrayMenuService : IDisposable
 
         CreateTrayIcon();
         _isInitialized = true;
+
+        // Linux only: keep the StatusNotifierItem registration alive (see ReRegisterTrayIcon).
+        if (OperatingSystem.IsLinux())
+        {
+            _linuxTrayWatchdog = new Timer(
+                static state => Dispatcher.UIThread.Post(() => ((TrayMenuService)state!).ReRegisterTrayIcon("watchdog")),
+                this,
+                LinuxTrayRegisterInterval,
+                LinuxTrayRegisterInterval);
+        }
     }
+
+    /// <summary>
+    /// Avalonia 11.3 only re-registers the StatusNotifierItem when the *watcher's name owner*
+    /// changes, so a restarted tray host leaves the item unlisted while carton keeps running:
+    /// icon gone, process alive, proxy fine. Confirmed in the wild on Caelestia/Quickshell
+    /// (the watcher restarts, "org.kde.StatusNotifierItem-{pid}-0" still exists on the bus but
+    /// is no longer in the watcher's RegisteredStatusNotifierItems) and tracked upstream as
+    /// AvaloniaUI/Avalonia#13130; AvaloniaUI/Avalonia#21980 fixes duplicate icons and a crash
+    /// on exit but explicitly not this. Upstream fix needs Avalonia 12.1+, so carton nudges
+    /// Avalonia into re-registering itself on a slow timer: setting IsVisible false/true makes
+    /// DBusTrayIconImpl run DestroyTrayIcon + CreateTrayIcon, which calls
+    /// RegisterStatusNotifierItem again - no menu rebuild, no restart, and the item reappears
+    /// with a fresh name within milliseconds.
+    /// </summary>
+    private static readonly TimeSpan LinuxTrayRegisterInterval = TimeSpan.FromMinutes(5);
 
     public void Dispose()
     {
@@ -75,6 +102,8 @@ public sealed class TrayMenuService : IDisposable
         }
 
         _isInitialized = false;
+        _linuxTrayWatchdog?.Dispose();
+        _linuxTrayWatchdog = null;
         _localizationService.LanguageChanged -= OnLanguageChanged;
 
         if (_mainViewModel != null)
@@ -96,6 +125,15 @@ public sealed class TrayMenuService : IDisposable
             _groupsViewModel.PropertyChanged -= OnGroupsViewModelPropertyChanged;
         }
 
+        DestroyTrayIcon();
+
+        _profileMenuItems.Clear();
+        _profilesEmptyMenuItem = null;
+    }
+
+    /// <summary>Releases the current tray icon (used by Dispose).</summary>
+    private void DestroyTrayIcon()
+    {
         if (_trayIcon != null)
         {
             _trayIcon.Clicked -= OnTrayIconClicked;
@@ -104,12 +142,44 @@ public sealed class TrayMenuService : IDisposable
             _trayIcon = null;
         }
 
-        _profileMenuItems.Clear();
-        _profilesEmptyMenuItem = null;
-
         if (_application != null)
         {
             TrayIcon.SetIcons(_application, new TrayIcons());
+        }
+    }
+
+    /// <summary>
+    /// Re-registers the tray item with the current host. Called by the Linux watchdog (on the UI
+    /// thread, via Dispatcher.Post). Must be called on the UI thread: it touches TrayIcon state.
+    /// Never throws; a no-op unless the icon is actually visible, and never runs twice at once.
+    /// </summary>
+    internal void ReRegisterTrayIcon(string reason)
+    {
+        var icon = _trayIcon;
+        if (!_isInitialized || icon is not { IsVisible: true })
+        {
+            return;
+        }
+
+        if (Interlocked.Exchange(ref _trayReRegisterPending, 1) == 1)
+        {
+            // Someone else owns the flag; it will clear it when done.
+            return;
+        }
+
+        try
+        {
+            icon.IsVisible = false;
+            icon.IsVisible = true;
+            _mainViewModel?.Log($"[INFO] Re-registered tray icon ({reason})");
+        }
+        catch (Exception ex)
+        {
+            _mainViewModel?.Log($"[WARN] Tray re-register failed: {ex.Message}");
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _trayReRegisterPending, 0);
         }
     }
 
@@ -122,7 +192,10 @@ public sealed class TrayMenuService : IDisposable
         {
             Icon = new WindowIcon(AssetLoader.Open(iconUri)),
             ToolTipText = _localizationService["App.Name"],
-            Menu = menu
+            Menu = menu,
+            // Explicit rather than inherited from Visual.IsVisible (default true): the Linux
+            // watchdog only re-registers a visible icon, so this must never be false by accident.
+            IsVisible = true
         };
 
         icon.Clicked += OnTrayIconClicked;
