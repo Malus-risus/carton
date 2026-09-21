@@ -86,7 +86,7 @@
 		<PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.22" />
 		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
 		<PackageReference Include="NuGet.Versioning" Version="7.9.0" />
-		<PackageReference Include="Velopack" Version="1.2.0" />
+		<PackageReference Include="Velopack" Version="1.2.158" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(Configuration)' == 'Debug' and '$(EnableAvaloniaDiagnostics)' == 'true'">
