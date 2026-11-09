@@ -609,7 +609,7 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
             Children = { messageBlock, okButton }
         };
 
-        await dialog.ShowDialog(owner);
+        await OwnedDialogAppearance.ShowAsync(dialog, owner);
     }
 
     public async Task RefreshKernelInfoAsync()
@@ -1106,7 +1106,7 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
             }
         };
 
-        return await dialog.ShowDialog<bool>(owner);
+        return await OwnedDialogAppearance.ShowAsync<bool>(dialog, owner);
     }
 
     private async Task<bool> ShowKernelDownloadFailedPromptAsync(string detail)
@@ -1196,7 +1196,7 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
             }
         };
 
-        return await dialog.ShowDialog<bool>(owner);
+        return await OwnedDialogAppearance.ShowAsync<bool>(dialog, owner);
     }
 
     private void ClearPendingKernelPackage()
@@ -2070,7 +2070,7 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
             }
         };
 
-        return await dialog.ShowDialog<bool>(owner);
+        return await OwnedDialogAppearance.ShowAsync<bool>(dialog, owner);
     }
 
     private async Task<bool> ShowResetSettingsDialogAsync(Window owner)
@@ -2126,7 +2126,7 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
             }
         };
 
-        return await dialog.ShowDialog<bool>(owner);
+        return await OwnedDialogAppearance.ShowAsync<bool>(dialog, owner);
     }
 
     private async Task ShowRestartRequiredDialogAndRestartAsync(Window owner)
@@ -2173,7 +2173,7 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
             }
         };
 
-        await dialog.ShowDialog<bool>(owner);
+        await OwnedDialogAppearance.ShowAsync<bool>(dialog, owner);
         await RestartApplicationAsync(owner);
     }
 
@@ -2242,7 +2242,7 @@ public partial class SettingsViewModel : PageViewModelBase, IDisposable
         buttons.Children.Add(okBtn);
         dialog.Content = new StackPanel { Margin = new Avalonia.Thickness(20), Children = { textBlock, buttons } };
 
-        var confirm = await dialog.ShowDialog<bool>(window);
+        var confirm = await OwnedDialogAppearance.ShowAsync<bool>(dialog, window);
         if (!confirm)
         {
             _suppressPreferenceUpdates = true;

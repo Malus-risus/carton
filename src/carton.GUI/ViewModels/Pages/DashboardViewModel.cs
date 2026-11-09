@@ -1357,7 +1357,7 @@ public partial class DashboardViewModel : PageViewModelBase
             Children = { prompt, passwordBox, buttons }
         };
 
-        return await dialog.ShowDialog<string?>(window);
+        return await OwnedDialogAppearance.ShowAsync<string?>(dialog, window);
     }
 
     private async Task<string?> ShowInboundPortDialogAsync()
@@ -1440,7 +1440,7 @@ public partial class DashboardViewModel : PageViewModelBase
             }
         };
 
-        return await dialog.ShowDialog<string?>(window);
+        return await OwnedDialogAppearance.ShowAsync<string?>(dialog, window);
     }
 
     private async Task<(string? ConfigPath, bool DeferredRefresh)> EnsureProfileConfigPathForStartAsync(Profile profile, string profileName)

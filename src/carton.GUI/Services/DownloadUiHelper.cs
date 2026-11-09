@@ -80,6 +80,6 @@ public static class DownloadUiHelper
             }
         };
 
-        return await dialog.ShowDialog<bool>(owner);
+        return await OwnedDialogAppearance.ShowAsync<bool>(dialog, owner);
     }
 }

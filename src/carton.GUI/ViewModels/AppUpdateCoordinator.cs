@@ -547,7 +547,7 @@ public partial class AppUpdateCoordinator : ObservableObject
                 }
             };
 
-            var shouldRestart = await dialog.ShowDialog<bool>(owner);
+            var shouldRestart = await OwnedDialogAppearance.ShowAsync<bool>(dialog, owner);
             if (shouldRestart)
             {
                 await ApplyAppUpdateCoreAsync();
@@ -656,7 +656,7 @@ public partial class AppUpdateCoordinator : ObservableObject
             }
         };
 
-        var shouldOpen = await dialog.ShowDialog<bool>(owner);
+        var shouldOpen = await OwnedDialogAppearance.ShowAsync<bool>(dialog, owner);
         if (shouldOpen)
         {
             OpenReleasesPage(releaseUrl);
