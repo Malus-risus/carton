@@ -536,7 +536,7 @@ public partial class MainViewModel : ViewModelBase
             Children = { messageBlock, okButton }
         };
 
-        await dialog.ShowDialog(owner);
+        await OwnedDialogAppearance.ShowAsync(dialog, owner);
     }
 
     private void OnManagerLogEntryReceived(object? sender, CartonLogEntry entry)

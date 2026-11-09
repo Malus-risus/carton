@@ -1175,7 +1175,7 @@ public partial class ProfilesViewModel : PageViewModelBase, IDisposable
             }
         };
 
-        return await dialog.ShowDialog<bool?>(owner);
+        return await OwnedDialogAppearance.ShowAsync<bool?>(dialog, owner);
     }
 
     private async Task ShowValidationErrorDialogAsync(string logText)
@@ -1268,7 +1268,7 @@ public partial class ProfilesViewModel : PageViewModelBase, IDisposable
             }
         };
 
-        await dialog.ShowDialog(owner);
+        await OwnedDialogAppearance.ShowAsync(dialog, owner);
     }
 
     private void RecalculateFormChanged()
