@@ -69,7 +69,7 @@
 		<PackageReference Include="Avalonia.Desktop" Version="12.2.999-cibuild0101188-alpha" />
 		<PackageReference Include="Avalonia.Themes.Fluent2" Version="12.2.999-cibuild0101188-alpha" />
 		<PackageReference Include="Avalonia.Controls.ColorPicker" Version="12.2.999-cibuild0101150-alpha" />
-		<PackageReference Include="Avalonia.Fonts.Inter" Version="12.2.999-cibuild0101180-alpha" />
+		<PackageReference Include="Avalonia.Fonts.Inter" Version="12.2.999-cibuild0101188-alpha" />
 		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
 		<PackageReference Include="NuGet.Versioning" Version="7.9.0" />
 		<PackageReference Include="Velopack" Version="1.2.161" />
