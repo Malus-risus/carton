@@ -66,7 +66,7 @@
 
 	<ItemGroup>
 		<PackageReference Include="Avalonia" Version="12.2.999-cibuild0101265-alpha" />
-		<PackageReference Include="Avalonia.Desktop" Version="12.2.999-cibuild0101265-alpha" />
+		<PackageReference Include="Avalonia.Desktop" Version="12.2.999-cibuild0101338-alpha" />
 		<PackageReference Include="Avalonia.Themes.Fluent2" Version="12.2.999-cibuild0101265-alpha" />
 		<PackageReference Include="Avalonia.Controls.ColorPicker" Version="12.2.999-cibuild0101265-alpha" />
 		<PackageReference Include="Avalonia.Fonts.Inter" Version="12.2.999-cibuild0101265-alpha" />
