@@ -6,7 +6,7 @@
   this quantifies how much that actually costs for carton's static UI.
 #>
 param(
-    [string]$ExePath = "$PSScriptRoot\..\..\src\carton.GUI\bin\Release\net10.0\carton.exe",
+    [string]$ExePath = "$PSScriptRoot\..\..\src\carton.GUI\bin\Release\net11.0\carton.exe",
     [int]$WarmupSeconds = 20,
     [int]$SampleSeconds = 30
 )
