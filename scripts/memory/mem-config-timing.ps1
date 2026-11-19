@@ -18,7 +18,7 @@ param(
     [int]$ProfileCount = 8,
     [int]$SizeKB = 2048,
     [string]$DataDir = "$env:APPDATA\Carton\data",
-    [string]$ExePath = "$PSScriptRoot\..\..\src\carton.GUI\bin\Release\net10.0\carton.exe",
+    [string]$ExePath = "$PSScriptRoot\..\..\src\carton.GUI\bin\Release\net11.0\carton.exe",
     [int]$SettleSeconds = 25,
     [string]$Label = ''
 )
