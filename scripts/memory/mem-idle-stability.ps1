@@ -22,7 +22,7 @@
   app needs a test hook.
 #>
 param(
-    [string]$ExePath = "$PSScriptRoot\..\..\src\carton.GUI\bin\Release\net10.0\carton.exe",
+    [string]$ExePath = "$PSScriptRoot\..\..\src\carton.GUI\bin\Release\net11.0\carton.exe",
     [string]$Mode = 'software',
     [int]$Minutes = 10,
     [int]$IntervalSeconds = 30,
