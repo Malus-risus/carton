@@ -8,7 +8,7 @@
   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/memory/mem-repeat.ps1 -Mode software -Runs 5
 #>
 param(
-    [string]$ExePath = "$PSScriptRoot\..\..\src\carton.GUI\bin\Release\net10.0\carton.exe",
+    [string]$ExePath = "$PSScriptRoot\..\..\src\carton.GUI\bin\Release\net11.0\carton.exe",
     [string]$Mode = 'software',
     [int]$Runs = 5,
     [int]$SettleSeconds = 25,
