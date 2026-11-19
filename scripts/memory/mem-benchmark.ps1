@@ -10,7 +10,7 @@
   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/memory/mem-benchmark.ps1 -SettleSeconds 45
 #>
 param(
-    [string]$ExePath = "$PSScriptRoot\..\..\src\carton.GUI\bin\Release\net10.0\carton.exe",
+    [string]$ExePath = "$PSScriptRoot\..\..\src\carton.GUI\bin\Release\net11.0\carton.exe",
     [int]$SettleSeconds = 30,
     [string[]]$Modes = @('gpu', 'software')
 )
